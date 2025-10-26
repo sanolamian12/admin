@@ -1,26 +1,3 @@
-// import React from "react";
-// import { auth, db, storage } from "./firebase";
-//
-// function AdminApp() {
-//   return (
-//     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-//       <h1>Firebase Admin Panel Starter</h1>
-//       <p>Firestore / Storage / Auth 연결이 정상입니다.</p>
-//       <p>이제 실제 UI 컴포넌트를 여기에 구현할 수 있습니다.</p>
-//     </div>
-//   );
-// }
-//
-// export default AdminApp;
-
-// import React, { useEffect, useMemo, useState } from "react";
-// import { auth, db, storage } from "./firebase";
-//
-// function AdminApp() {
-//   // ... 여기에 useState, useEffect 등으로 구성된 관리자 UI 코드 ...
-// }
-//
-// export default AdminApp;
 
 /* ============================================================
    🔥 Firestore Final Schema (2025 Normalized Model)
