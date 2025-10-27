@@ -2,7 +2,7 @@
 import React from "react";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "../firebase";
-import { Link } from "react-router-dom"; // ✅ 페이지 이동용
+import { Link } from "react-router-dom";
 
 const AdminPage = () => {
   const [user] = useAuthState(auth);
@@ -22,9 +22,7 @@ const AdminPage = () => {
               to="/admin/notice"
               className="p-8 border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition bg-white block"
             >
-              <h2 className="text-xl font-bold text-gray-800 mb-3">
-                📢 공지 관리
-              </h2>
+              <h2 className="text-xl font-bold text-gray-800 mb-3">📢 공지 관리</h2>
               <p className="text-gray-600 text-sm leading-relaxed">
                 게시글 등록, 수정 및 삭제 기능을 관리합니다.
               </p>
@@ -32,14 +30,10 @@ const AdminPage = () => {
 
             {/* ✅ 예배 게시물 관리 */}
             <div className="p-8 border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition bg-white">
-              <h2 className="text-xl font-bold text-gray-800 mb-3">
-                ⛪ 예배 게시물 관리
-              </h2>
+              <h2 className="text-xl font-bold text-gray-800 mb-3">⛪ 예배 게시물 관리</h2>
               <p className="text-gray-600 text-sm leading-relaxed mb-4">
                 주간 예배 게시물의 등록, 조회 및 삭제 기능을 관리합니다.
               </p>
-
-              {/* 🔹 예배 관련 링크 */}
               <div className="flex flex-col space-y-2">
                 <Link
                   to="/admin/weekly"
@@ -56,16 +50,34 @@ const AdminPage = () => {
               </div>
             </div>
 
-            {/* ✅ 일정 관리 (새로 추가된 섹션) */}
+            {/* ✅ 사진 앨범 관리 (새로 추가된 섹션) */}
             <div className="p-8 border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition bg-white">
-              <h2 className="text-xl font-bold text-gray-800 mb-3">
-                📅 일정 관리
-              </h2>
+              <h2 className="text-xl font-bold text-gray-800 mb-3">📸 사진 앨범 관리</h2>
+              <p className="text-gray-600 text-sm leading-relaxed mb-4">
+                교회 행사 및 예배 사진을 등록하고 앨범별로 관리합니다.
+              </p>
+              <div className="flex flex-col space-y-2">
+                <Link
+                  to="/admin/photo"
+                  className="text-blue-600 underline text-sm hover:text-blue-800 transition"
+                >
+                  앨범 목록 보기
+                </Link>
+                <Link
+                  to="/admin/photo/new"
+                  className="text-blue-600 underline text-sm hover:text-blue-800 transition"
+                >
+                  새 앨범 등록하기
+                </Link>
+              </div>
+            </div>
+
+            {/* ✅ 일정 관리 */}
+            <div className="p-8 border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition bg-white">
+              <h2 className="text-xl font-bold text-gray-800 mb-3">📅 일정 관리</h2>
               <p className="text-gray-600 text-sm leading-relaxed mb-4">
                 교회 및 개인 일정 등록, 조회, 삭제 기능을 관리합니다.
               </p>
-
-              {/* 🔹 일정 관리 관련 링크 */}
               <div className="flex flex-col space-y-2">
                 <Link
                   to="/admin/calendar"
@@ -84,12 +96,10 @@ const AdminPage = () => {
 
             {/* ✅ 사용자 통계 */}
             <div className="p-8 border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition bg-white">
-                <h2 className="text-xl font-bold text-gray-800 mb-3">
-                    📊 사용자 통계
-                </h2>
-                <p className="text-gray-600 text-sm leading-relaxed">
-                    앱 사용자 수 및 방문 기록을 확인합니다.
-                </p>
+              <h2 className="text-xl font-bold text-gray-800 mb-3">📊 사용자 통계</h2>
+              <p className="text-gray-600 text-sm leading-relaxed">
+                앱 사용자 수 및 방문 기록을 확인합니다.
+              </p>
             </div>
           </div>
         </>

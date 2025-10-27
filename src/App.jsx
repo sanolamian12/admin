@@ -1,23 +1,27 @@
 // src/App.jsx
 import React from "react";
-import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom"; // ✅ Navigate 추가
+import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
 import Login from "./Login.jsx";
 import ProtectedRoute from "./ProtectedRoute.jsx";
 import AdminLayout from "./pages/AdminLayout.jsx";
 import AdminPage from "./pages/AdminPage.jsx";
+
 import NoticeList from "./pages/NoticeList.jsx";
 import NoticeForm from "./pages/NoticeForm.jsx";
 import NoticeEdit from "./pages/NoticeEdit.jsx";
 
-// ✅ 추가: 주간 예배 목록/상세
 import WeeklyList from "./pages/WeeklyList.jsx";
 import WeeklyDetail from "./pages/WeeklyDetail.jsx";
 import WeeklyForm from "./pages/WeeklyForm.jsx";
 import WeeklyEdit from "./pages/WeeklyEdit.jsx";
 
 import CalendarList from "./pages/CalendarList.jsx";
-// import CalendarForm from "./pages/CalendarForm.jsx";
-import CalendarNewPage from './pages/CalendarNewPage.jsx';
+import CalendarNewPage from "./pages/CalendarNewPage.jsx";
+
+// ✅ 추가: 사진 앨범 관련 페이지
+import PhotoList from "./pages/PhotoList.jsx";
+import PhotoForm from "./pages/PhotoForm.jsx";
+import PhotoDetail from "./pages/PhotoDetail.jsx";
 
 function App() {
   return (
@@ -73,12 +77,15 @@ function App() {
               <Route path="weekly/:id" element={<WeeklyDetail />} />
               <Route path="weekly/edit/:id" element={<WeeklyEdit />} />
 
-             {/* 달력 스케줄 */}
-              <Route path="/admin/calendar" element={<CalendarList />} />
-{/*               <Route path="/admin/calendar/new" element={<CalendarForm />} /> */}
-              <Route path="/admin/calendar/new" element={<CalendarNewPage />} />
-            </Route>
+              {/* 달력 */}
+              <Route path="calendar" element={<CalendarList />} />
+              <Route path="calendar/new" element={<CalendarNewPage />} />
 
+              {/* ✅ 사진 앨범 관리 */}
+              <Route path="photo" element={<PhotoList />} />
+              <Route path="photo/new" element={<PhotoForm />} />
+              <Route path="photo/:id" element={<PhotoDetail />} />
+            </Route>
 
             {/* 알 수 없는 경로 → /admin */}
             <Route path="*" element={<Navigate to="/admin" replace />} />
