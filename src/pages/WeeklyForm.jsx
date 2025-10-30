@@ -13,20 +13,18 @@ const WeeklyForm = () => {
     serVerse: "",
     serPreacher: "",
     serSummary: "",
-    file: null, // ✅ 파일 객체
-    fileUrl: "", // ✅ 업로드 후 다운로드 URL
+    file: null,
+    fileUrl: "",
   });
 
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  // 입력 핸들러
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // ✅ 파일 선택 핸들러 (이 시점에서는 업로드 안 함)
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -35,13 +33,11 @@ const WeeklyForm = () => {
     }
   };
 
-  // ✅ 파일 선택 취소
   const handleCancelFile = () => {
     setFormData((prev) => ({ ...prev, file: null, fileUrl: "" }));
     setUploadProgress(0);
   };
 
-  // ✅ 실제 업로드 + Firestore 저장
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.title.trim()) {
@@ -55,7 +51,7 @@ const WeeklyForm = () => {
       const id = weeklyRef.id;
       let downloadURL = "";
 
-      // 파일 업로드 (선택된 경우에만)
+      // ✅ (1) 파일 업로드 (선택된 경우에만)
       if (formData.file) {
         const storage = getStorage();
         const fileRef = ref(storage, `weekly_files/${Date.now()}_${formData.file.name}`);
@@ -81,20 +77,24 @@ const WeeklyForm = () => {
         });
       }
 
-      // Firestore 등록
+      // ✅ (2) Firestore 등록 — 누락 필드 추가됨
       await setDoc(weeklyRef, {
         id,
         title: formData.title,
-        registeredAt: serverTimestamp(),
         views: 0,
+
+        // 🔹 추가된 필드
+        isActive: true,                // ✅ 활성화 상태 (앱 필터 조건용)
+        registeredAt: serverTimestamp(), // ✅ 정렬 및 최신순 표시용
       });
 
+      // ✅ (3) 세부 내용 테이블
       await setDoc(doc(db, "weekly_detail", id), {
         id,
         "ser-verse": formData.serVerse,
         "ser-preacher": formData.serPreacher,
         "ser-summary": formData.serSummary,
-        file_url: downloadURL, // ✅ 업로드 완료 시 URL 저장
+        file_url: downloadURL,
       });
 
       alert("예배 게시물이 등록되었습니다!");
@@ -163,7 +163,7 @@ const WeeklyForm = () => {
           />
         </div>
 
-        {/* ✅ 파일 선택 + 취소 + 진행 상태 */}
+        {/* 파일 업로드 */}
         <div>
           <label className="block text-gray-700 mb-1">파일 첨부</label>
           {!formData.file ? (

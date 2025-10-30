@@ -1,7 +1,7 @@
 // ✅ 최신 Firebase Functions v2 방식 (2024~)
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2/options");
-//const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { Storage } = require("@google-cloud/storage");
 const sharp = require("sharp");
@@ -9,14 +9,19 @@ const path = require("path");
 const os = require("os");
 const fs = require("fs-extra");
 
-// ✅ 시드니 리전 지정 (스토리지와 일치시킴)
+// ✅ 시드니 리전 지정 (스토리지 및 Firestore와 일치)
 setGlobalOptions({ region: "australia-southeast1" });
 
+// ✅ Firebase Admin 초기화
 admin.initializeApp({
-  storageBucket: "stlc-church-app.appspot.com", // ✅ 올바른 버킷 이름
+  storageBucket: "stlc-church-app.appspot.com",
 });
 const storage = new Storage();
 
+
+// ============================================================
+// 🔹 1. Photo 업로드 시 썸네일 자동 생성
+// ============================================================
 exports.generatePhotoThumbnail = onObjectFinalized(async (event) => {
   const object = event.data;
   const bucketName = object.bucket;
@@ -25,91 +30,131 @@ exports.generatePhotoThumbnail = onObjectFinalized(async (event) => {
   const fileName = path.basename(filePath);
   const dirName = path.dirname(filePath);
 
-//exports.generatePhotoThumbnail = functions.storage
-//  .object()
-//  .onFinalize(async (object) => {
-//    const bucketName = object.bucket;
-//    const filePath = object.name; // 예: "photo/43ukBjHibk2jNdm9USQN/images/002.jpg"
-//    const contentType = object.contentType;
-//    const fileName = path.basename(filePath);
-//    const dirName = path.dirname(filePath);
+  if (!contentType || !contentType.startsWith("image/")) {
+    console.log("🚫 Not an image, skipping...");
+    return null;
+  }
 
-    // ✅ 이미지 외 파일은 무시
-    if (!contentType || !contentType.startsWith("image/")) {
-      console.log("🚫 Not an image, skipping...");
-      return null;
-    }
+  if (fileName.startsWith("thumb_")) {
+    console.log("🚫 Already a thumbnail, skipping...");
+    return null;
+  }
 
-    // ✅ 이미 썸네일 파일이면 무시
-    if (fileName.startsWith("thumb_")) {
-      console.log("🚫 Already a thumbnail, skipping...");
-      return null;
-    }
+  const bucket = storage.bucket(bucketName);
+  const tempLocalFile = path.join(os.tmpdir(), fileName);
+  const tempLocalDir = path.join(os.tmpdir(), "thumbs");
+  const thumbFileName = `thumb_${fileName}`;
+  const thumbFilePath = path.join(dirName, "../thumbs", thumbFileName);
 
-    const bucket = storage.bucket(bucketName);
-    const tempLocalFile = path.join(os.tmpdir(), fileName);
-    const tempLocalDir = path.join(os.tmpdir(), "thumbs");
-    const thumbFileName = `thumb_${fileName}`;
-    const thumbFilePath = path.join(dirName, "../thumbs", thumbFileName); // 예: "photo/{photoId}/thumbs/thumb_002.jpg"
+  await fs.ensureDir(tempLocalDir);
+  await bucket.file(filePath).download({ destination: tempLocalFile });
 
-    await fs.ensureDir(tempLocalDir);
-    await bucket.file(filePath).download({ destination: tempLocalFile });
+  const thumbBuffer = await sharp(tempLocalFile).resize({ width: 300 }).toBuffer();
+  const tempLocalThumb = path.join(tempLocalDir, thumbFileName);
+  await fs.writeFile(tempLocalThumb, thumbBuffer);
 
-    // ✅ Sharp로 썸네일 리사이즈
-    const thumbBuffer = await sharp(tempLocalFile)
-      .resize({ width: 300 })
-      .toBuffer();
+  await bucket.upload(tempLocalThumb, {
+    destination: thumbFilePath,
+    metadata: { contentType },
+  });
 
-    const tempLocalThumb = path.join(tempLocalDir, thumbFileName);
-    await fs.writeFile(tempLocalThumb, thumbBuffer);
+  console.log("✅ Thumbnail created:", thumbFilePath);
 
-    // ✅ Storage에 썸네일 업로드
-    await bucket.upload(tempLocalThumb, {
-      destination: thumbFilePath,
-      metadata: { contentType },
+  const thumbFile = bucket.file(thumbFilePath);
+  const [thumbURL] = await thumbFile.getSignedUrl({
+    action: "read",
+    expires: "03-01-2500",
+  });
+
+  console.log("📸 Thumbnail URL:", thumbURL);
+
+  const segments = filePath.split("/");
+  const photoId = segments[1];
+  const folderName = segments[2];
+
+  if (folderName === "images") {
+    const pictureId = path.parse(fileName).name;
+    console.log(`🔹 Updating photo_detail for ${photoId}, picture ${pictureId}`);
+
+    const querySnapshot = await admin
+      .firestore()
+      .collection("photo_detail")
+      .where("content_id", "==", photoId)
+      .where("picture_id", "==", pictureId)
+      .get();
+
+    querySnapshot.forEach((docSnap) => {
+      docSnap.ref.update({ thumb_url: thumbURL });
     });
-
-    console.log("✅ Thumbnail created:", thumbFilePath);
-
-    // ✅ 썸네일 URL 생성 (public 접근 방식)
-    const thumbFile = bucket.file(thumbFilePath);
-    const [thumbURL] = await thumbFile.getSignedUrl({
-      action: "read",
-      expires: "03-01-2500",
+  } else if (folderName === "cover") {
+    console.log(`🔹 Updating photo main document for ${photoId}`);
+    await admin.firestore().collection("photo").doc(photoId).update({
+      thumb_url: thumbURL,
     });
+  }
 
-    console.log("📸 Thumbnail URL:", thumbURL);
-
-    // ✅ Firestore 업데이트 로직
-    const segments = filePath.split("/");
-    // filePath: "photo/{photoId}/images/{filename}"
-    const photoId = segments[1];
-    const folderName = segments[2]; // "images" 또는 "cover"
-
-    if (folderName === "images") {
-      // 상세 이미지의 썸네일 업데이트 → photo_detail 컬렉션
-      const pictureId = path.parse(fileName).name; // "002"
-      console.log(`🔹 Updating photo_detail for ${photoId}, picture ${pictureId}`);
-
-      const querySnapshot = await admin
-        .firestore()
-        .collection("photo_detail")
-        .where("content_id", "==", photoId)
-        .where("picture_id", "==", pictureId)
-        .get();
-
-      querySnapshot.forEach((docSnap) => {
-        docSnap.ref.update({ thumb_url: thumbURL });
-      });
-    } else if (folderName === "cover") {
-      // 대표 썸네일 → photo 컬렉션의 thumb_url 업데이트
-      console.log(`🔹 Updating photo main document for ${photoId}`);
-      await admin.firestore().collection("photo").doc(photoId).update({
-        thumb_url: thumbURL,
-      });
-    }
-
-    // ✅ 임시파일 정리
-    await fs.remove(tempLocalDir);
-    return console.log("🧹 Cleanup complete.");
+  await fs.remove(tempLocalDir);
+  return console.log("🧹 Cleanup complete.");
 });
+
+
+// ============================================================
+// 🔹 2. Weekly / Photo / Notice 조회수 자동 반영
+// ============================================================
+
+// 🧠 공통 함수: views +1 트랜잭션 처리
+async function incrementViews(collectionName, contentId) {
+  const ref = admin.firestore().collection(collectionName).doc(contentId);
+  await admin.firestore().runTransaction(async (t) => {
+    const snap = await t.get(ref);
+    if (!snap.exists) {
+      console.log(`⚠️ ${collectionName}/${contentId} not found`);
+      return;
+    }
+    const currentViews = snap.data()?.views || 0;
+    t.update(ref, { views: currentViews + 1 });
+  });
+  console.log(`✅ Updated views for ${collectionName}/${contentId}`);
+}
+
+
+// ✅ (1) Weekly
+exports.syncWeeklyViews = onDocumentCreated(
+  {
+    document: "weekly_views/{docId}",
+    region: "australia-southeast1",
+  },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data?.content_id) return;
+    await incrementViews("weekly", data.content_id);
+  }
+);
+
+
+// ✅ (2) Photo
+exports.syncPhotoViews = onDocumentCreated(
+  {
+    document: "photo_views/{docId}",
+    region: "australia-southeast1",
+  },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data?.content_id) return;
+    await incrementViews("photo", data.content_id);
+  }
+);
+
+
+// ✅ (3) Notice
+exports.syncNoticeViews = onDocumentCreated(
+  {
+    document: "notice_views/{docId}",
+    region: "australia-southeast1",
+  },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data?.content_id) return;
+    await incrementViews("notice", data.content_id);
+  }
+);
