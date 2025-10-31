@@ -6,11 +6,11 @@ import {
   getDocs,
   deleteDoc,
   doc,
-  updateDoc,
   orderBy,
   query,
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { db, storage } from "../firebase";
+import { ref, listAll, deleteObject } from "firebase/storage";
 
 const PhotoList = () => {
   const [photos, setPhotos] = useState([]);
@@ -34,19 +34,51 @@ const PhotoList = () => {
     fetchPhotos();
   }, []);
 
-  // 🔹 isActive 토글
-  const toggleActive = async (id, current) => {
-    await updateDoc(doc(db, "photo", id), { isActive: !current });
-    setPhotos((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, isActive: !current } : p))
-    );
+  // 🔹 Storage 내 모든 하위 파일 재귀 삭제
+  const deleteAllInFolder = async (folderRef) => {
+    const list = await listAll(folderRef);
+    const promises = [];
+
+    // 현재 폴더 내 파일 삭제
+    for (const item of list.items) {
+      promises.push(deleteObject(item));
+    }
+
+    // 하위 폴더 내 파일 재귀 삭제
+    for (const prefix of list.prefixes) {
+      promises.push(deleteAllInFolder(prefix));
+    }
+
+    await Promise.all(promises);
   };
 
-  // 🔹 삭제
-  const handleDelete = async (id) => {
-    if (!window.confirm("이 앨범을 삭제하시겠습니까?")) return;
-    await deleteDoc(doc(db, "photo", id));
-    setPhotos((prev) => prev.filter((p) => p.id !== id));
+  // 🔹 Firestore 문서 + Storage 이미지 완전 삭제
+  const handleDelete = async (photoId) => {
+    const ok = window.confirm("이 앨범을 완전히 삭제하시겠습니까? (복원 불가)");
+    if (!ok) return;
+
+    try {
+      // 1️⃣ Firestore: 하위 photo_detail 삭제
+      const detailSnap = await getDocs(collection(db, "photo", photoId, "photo_detail"));
+      const deleteDetailPromises = detailSnap.docs.map((d) =>
+        deleteDoc(doc(db, "photo", photoId, "photo_detail", d.id))
+      );
+      await Promise.all(deleteDetailPromises);
+
+      // 2️⃣ Firestore: 상위 photo 문서 삭제
+      await deleteDoc(doc(db, "photo", photoId));
+
+      // 3️⃣ Storage: 해당 앨범의 모든 이미지 및 썸네일 삭제
+      const albumRef = ref(storage, `photo/${photoId}`);
+      await deleteAllInFolder(albumRef);
+
+      // 4️⃣ UI 갱신
+      setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+      alert("앨범이 완전히 삭제되었습니다.");
+    } catch (err) {
+      console.error("⚠️ Error deleting photo album:", err);
+      alert("삭제 중 오류가 발생했습니다.");
+    }
   };
 
   if (loading) {
@@ -101,16 +133,12 @@ const PhotoList = () => {
                   등록자: {p.user || "Unknown"}
                 </p>
 
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center mt-2">
                   <button
-                    onClick={() => toggleActive(p.id, p.isActive)}
-                    className={`px-3 py-1 rounded text-sm ${
-                      p.isActive
-                        ? "bg-green-100 text-green-700"
-                        : "bg-gray-200 text-gray-600"
-                    }`}
+                    onClick={() => navigate(`/admin/photo/${p.id}`)}
+                    className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded"
                   >
-                    {p.isActive ? "활성" : "비활성"}
+                    상세보기
                   </button>
 
                   <button

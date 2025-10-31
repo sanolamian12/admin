@@ -1,7 +1,7 @@
 // src/pages/WeeklyForm.jsx
 import React, { useState } from "react";
 import { db } from "../firebase";
-import { collection, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, doc, setDoc, Timestamp } from "firebase/firestore"; // ✅ Timestamp 추가
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { useNavigate } from "react-router-dom";
 
@@ -77,18 +77,20 @@ const WeeklyForm = () => {
         });
       }
 
-      // ✅ (2) Firestore 등록 — 누락 필드 추가됨
+      // ✅ (2) 시드니 시간 기준 Timestamp 생성
+      const now = new Date();
+      const sydneyTime = new Date(now.getTime() + 11 * 60 * 60 * 1000);
+
+      // ✅ (3) Firestore 등록
       await setDoc(weeklyRef, {
         id,
         title: formData.title,
         views: 0,
-
-        // 🔹 추가된 필드
-        isActive: true,                // ✅ 활성화 상태 (앱 필터 조건용)
-        registeredAt: serverTimestamp(), // ✅ 정렬 및 최신순 표시용
+        isActive: true,
+        registeredAt: Timestamp.fromDate(sydneyTime), // ✅ Firestore Timestamp 저장 (UTC+11)
       });
 
-      // ✅ (3) 세부 내용 테이블
+      // ✅ (4) 세부 내용 테이블
       await setDoc(doc(db, "weekly_detail", id), {
         id,
         "ser-verse": formData.serVerse,

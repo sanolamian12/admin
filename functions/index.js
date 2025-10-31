@@ -44,12 +44,16 @@ exports.generatePhotoThumbnail = onObjectFinalized(async (event) => {
   const tempLocalFile = path.join(os.tmpdir(), fileName);
   const tempLocalDir = path.join(os.tmpdir(), "thumbs");
   const thumbFileName = `thumb_${fileName}`;
-  const thumbFilePath = path.join(dirName, "../thumbs", thumbFileName);
+  const thumbFilePath = filePath
+    .replace("/images/", "/thumbs/")
+    .replace(fileName, thumbFileName);
 
   await fs.ensureDir(tempLocalDir);
   await bucket.file(filePath).download({ destination: tempLocalFile });
 
-  const thumbBuffer = await sharp(tempLocalFile).resize({ width: 300 }).toBuffer();
+  const thumbBuffer = await sharp(tempLocalFile)
+    .resize({ width: 300 })
+    .toBuffer();
   const tempLocalThumb = path.join(tempLocalDir, thumbFileName);
   await fs.writeFile(tempLocalThumb, thumbBuffer);
 
@@ -72,29 +76,34 @@ exports.generatePhotoThumbnail = onObjectFinalized(async (event) => {
   const photoId = segments[1];
   const folderName = segments[2];
 
+  // ========================================================
+  // ✅ 1️⃣ images 폴더: photo_detail.thumb_url 업데이트
+  // ========================================================
   if (folderName === "images") {
     const pictureId = path.parse(fileName).name;
     console.log(`🔹 Updating photo_detail for ${photoId}, picture ${pictureId}`);
 
-    const querySnapshot = await admin
+    const detailRef = admin
       .firestore()
+      .collection("photo")
+      .doc(photoId)
       .collection("photo_detail")
-      .where("content_id", "==", photoId)
-      .where("picture_id", "==", pictureId)
-      .get();
+      .doc(pictureId); // ✅ 개별 문서 직접 업데이트
 
-    querySnapshot.forEach((docSnap) => {
-      docSnap.ref.update({ thumb_url: thumbURL });
-    });
-  } else if (folderName === "cover") {
-    console.log(`🔹 Updating photo main document for ${photoId}`);
-    await admin.firestore().collection("photo").doc(photoId).update({
-      thumb_url: thumbURL,
-    });
+    await detailRef.set({ thumb_url: thumbURL }, { merge: true });
+
+    // ✅ 001.jpg 의 썸네일이라면 대표 thumb_url 로 photo 문서 갱신
+    if (pictureId === "001") {
+      console.log(`🌟 Setting main thumb_url for photo/${photoId}`);
+      await admin.firestore().collection("photo").doc(photoId).update({
+        thumb_url: thumbURL,
+      });
+    }
   }
 
   await fs.remove(tempLocalDir);
-  return console.log("🧹 Cleanup complete.");
+  console.log("🧹 Cleanup complete.");
+  return null;
 });
 
 

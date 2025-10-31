@@ -5,68 +5,67 @@ import { db, storage } from "../firebase";
 import {
   collection,
   addDoc,
-  serverTimestamp,
+  doc,
+  updateDoc,
+  Timestamp, // ✅ 추가
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { updateDoc, doc } from "firebase/firestore";
 
 const PhotoForm = () => {
   const [caption, setCaption] = useState("");
-  const [thumbFile, setThumbFile] = useState(null);
   const [imageFiles, setImageFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const navigate = useNavigate();
 
-  // 🔹 파일 업로드 헬퍼
+  // 🔹 공통 파일 업로드 함수
   const uploadFile = async (path, file) => {
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file);
-    return await getDownloadURL(storageRef);
+    const fileRef = ref(storage, path);
+    await uploadBytes(fileRef, file);
+    return await getDownloadURL(fileRef);
   };
 
-  // 🔹 폴더 구조 & 네이밍 규칙 반영
-  //  - cover/thumb_cover.jpg
-  //  - images/001.jpg, 002.jpg ...
+  // 🔹 제출 처리
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!caption || !thumbFile) {
-      alert("제목과 대표 이미지를 모두 선택하세요.");
+    if (!caption || imageFiles.length === 0) {
+      alert("제목과 이미지를 모두 선택하세요.");
       return;
     }
 
     try {
       setUploading(true);
 
-      // 1️⃣ photo 문서 생성 (id 미리 확보)
+      // ✅ 시드니 시간 기준 Timestamp 생성
+      const now = new Date();
+      const sydneyTime = new Date(now.getTime() + 11 * 60 * 60 * 1000);
+
+      // 1️⃣ photo 문서 생성
       const photoRef = await addDoc(collection(db, "photo"), {
         caption,
-        user: "admin", // 나중에 auth.currentUser.email 로 교체 가능
-        registeredAt: serverTimestamp(),
+        user: "admin", // 추후 auth.currentUser.email 로 교체 가능
+        registeredAt: Timestamp.fromDate(sydneyTime), // ✅ 변경됨
         isActive: true,
         thumb_url: "",
         views: 0,
       });
+
       const photoId = photoRef.id;
 
-      // 2️⃣ 썸네일 업로드
-      const thumbPath = `photo/${photoId}/cover/thumb_cover.jpg`;
-      const thumbURL = await uploadFile(thumbPath, thumbFile);
-      //await photoRef.update?.({ thumb_url: thumbURL }); // addDoc 이후 update용 fallback
-      await updateDoc(doc(db, "photo", photoId), { thumb_url: thumbURL });
+      // 2️⃣ 상세 이미지 업로드 (첫 번째 이미지 = 대표)
+      const detailCol = collection(db, "photo", photoId, "photo_detail");
 
-      // 3️⃣ 상세 이미지 업로드 및 photo_detail 생성
-      const photoDetailCol = collection(db, "photo_detail");
       for (let i = 0; i < imageFiles.length; i++) {
         const file = imageFiles[i];
         const index = String(i + 1).padStart(3, "0"); // 001, 002...
         const imgPath = `photo/${photoId}/images/${index}.jpg`;
+
         const imgURL = await uploadFile(imgPath, file);
 
-        await addDoc(photoDetailCol, {
+        await addDoc(detailCol, {
           content_id: photoId,
           picture_id: index,
-          thumb_url: thumbURL, // 대표 썸네일 재사용 (간단 버전)
           image_url: imgURL,
+          thumb_url: "", // Cloud Function이 thumb_001.jpg 등 자동 추가
         });
       }
 
@@ -82,9 +81,7 @@ const PhotoForm = () => {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">
-        📸 새 앨범 등록
-      </h1>
+      <h1 className="text-2xl font-bold text-gray-800 mb-6">📸 새 앨범 등록</h1>
 
       <form
         onSubmit={handleSubmit}
@@ -104,29 +101,17 @@ const PhotoForm = () => {
           />
         </div>
 
-        {/* 썸네일 선택 */}
+        {/* 상세 이미지 여러 장 */}
         <div>
           <label className="block text-sm font-semibold mb-2">
-            대표 썸네일 이미지
-          </label>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => setThumbFile(e.target.files[0])}
-            required
-          />
-        </div>
-
-        {/* 상세 이미지 여러 장 선택 */}
-        <div>
-          <label className="block text-sm font-semibold mb-2">
-            상세 이미지 (여러 장 선택 가능)
+            이미지 업로드 (첫 번째 이미지가 대표로 사용됩니다)
           </label>
           <input
             type="file"
             accept="image/*"
             multiple
             onChange={(e) => setImageFiles(Array.from(e.target.files))}
+            required
           />
           {imageFiles.length > 0 && (
             <p className="text-sm text-gray-600 mt-1">

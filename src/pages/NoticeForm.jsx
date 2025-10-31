@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db, storage } from "../firebase";
-import { collection, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, doc, setDoc, Timestamp } from "firebase/firestore"; // ✅ Timestamp 추가
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 function NoticeForm() {
@@ -35,26 +35,29 @@ function NoticeForm() {
   // 🔹 폼 제출
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!title.trim() || !content.trim()) return alert("제목과 내용을 입력하세요.");
+    if (!title.trim() || !content.trim())
+      return alert("제목과 내용을 입력하세요.");
 
     setLoading(true);
     try {
       const noticeId = `notice_${Date.now()}`;
-
-      // 파일 업로드 수행
       const fileURL = await handleFileUpload(noticeId);
 
-      // notice 문서 등록
+      // ✅ 시드니(UTC+11) 시간 생성
+      const now = new Date();
+      const sydneyTime = new Date(now.getTime() + 11 * 60 * 60 * 1000);
+
+      // ✅ notice 문서 등록
       await setDoc(doc(db, "notice", noticeId), {
         id: noticeId,
         title,
         user: "admin",
-        registeredAt: serverTimestamp(),
+        registeredAt: Timestamp.fromDate(sydneyTime), // ✅ 변경됨
         isActive: true,
         views: 0,
       });
 
-      // notice_detail 문서 등록
+      // ✅ notice_detail 문서 등록
       await setDoc(doc(db, "notice_detail", noticeId), {
         id: noticeId,
         content,
@@ -132,7 +135,11 @@ function NoticeForm() {
                 : "bg-blue-600 hover:bg-blue-700"
             } transition`}
           >
-            {uploading ? "파일 업로드 중..." : loading ? "등록 중..." : "등록하기"}
+            {uploading
+              ? "파일 업로드 중..."
+              : loading
+              ? "등록 중..."
+              : "등록하기"}
           </button>
         </div>
       </form>
