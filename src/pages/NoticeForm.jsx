@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db, storage } from "../firebase";
-import { collection, doc, setDoc, Timestamp } from "firebase/firestore"; // ✅ Timestamp 추가
+import { collection, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 function NoticeForm() {
@@ -13,13 +13,14 @@ function NoticeForm() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // 🔹 파일 업로드 함수
+  // 🔹 파일 업로드 (Storage)
   const handleFileUpload = async (noticeId) => {
     if (!file) return "";
 
     try {
       setUploading(true);
-      const storageRef = ref(storage, `notice_files/${noticeId}/${file.name}`);
+      // ✅ Flutter와 동일한 경로 구조
+      const storageRef = ref(storage, `notice/${noticeId}/${file.name}`);
       await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(storageRef);
       return downloadURL;
@@ -35,29 +36,31 @@ function NoticeForm() {
   // 🔹 폼 제출
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!title.trim() || !content.trim())
-      return alert("제목과 내용을 입력하세요.");
+    if (!title.trim() || !content.trim()) {
+      alert("제목과 내용을 입력하세요.");
+      return;
+    }
 
     setLoading(true);
     try {
-      const noticeId = `notice_${Date.now()}`;
+      // ✅ Firestore에서 자동 ID 생성 (Flutter와 동일)
+      const noticeRef = doc(collection(db, "notice"));
+      const noticeId = noticeRef.id;
+
+      // ✅ 파일 업로드
       const fileURL = await handleFileUpload(noticeId);
 
-      // ✅ 시드니(UTC+11) 시간 생성
-      const now = new Date();
-      const sydneyTime = new Date(now.getTime() + 11 * 60 * 60 * 1000);
-
-      // ✅ notice 문서 등록
-      await setDoc(doc(db, "notice", noticeId), {
+      // ✅ notice 문서 생성
+      await setDoc(noticeRef, {
         id: noticeId,
         title,
-        user: "admin",
-        registeredAt: Timestamp.fromDate(sydneyTime), // ✅ 변경됨
+        user: "admin", // 관리자 계정 이름
+        registeredAt: serverTimestamp(),
         isActive: true,
         views: 0,
       });
 
-      // ✅ notice_detail 문서 등록
+      // ✅ notice_detail 문서 생성 (id 동일)
       await setDoc(doc(db, "notice_detail", noticeId), {
         id: noticeId,
         content,
@@ -77,6 +80,7 @@ function NoticeForm() {
   return (
     <div className="max-w-3xl mx-auto bg-white shadow-md rounded-xl p-8">
       <h2 className="text-2xl font-bold mb-6 text-blue-700">📢 새 공지 등록</h2>
+
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* 제목 */}
         <div>
@@ -117,7 +121,7 @@ function NoticeForm() {
           )}
         </div>
 
-        {/* 버튼 영역 */}
+        {/* 버튼 */}
         <div className="flex justify-end gap-4 pt-4">
           <button
             type="button"
