@@ -167,3 +167,216 @@ exports.syncNoticeViews = onDocumentCreated(
     await incrementViews("notice", data.content_id);
   }
 );
+
+// ===============================
+// 4) Daily Push (STLC)
+// ===============================
+const { onSchedule } = require("firebase-functions/v2/scheduler");
+
+// 시드니 HH:mm 포맷 (ex: "09:00")
+function getSydneyHHmm() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Sydney",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+    .formatToParts(now)
+    .reduce((acc, p) => ((acc[p.type] = p.value), acc), {});
+  return `${parts.hour}:${parts.minute}`;
+}
+
+// yyyyMMdd 포맷
+function getSydneyYyyyMmDd() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Sydney",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .formatToParts(now)
+    .reduce((acc, p) => ((acc[p.type] = p.value), acc), {});
+  // month/day가 "11"/"03" 형태라 가정
+  return `${parts.year}${parts.month}${parts.day}`;
+}
+
+// 무효 토큰 코드 판별
+function isInvalidTokenError(err) {
+  const code = err?.code || err?.errorInfo?.code || "";
+  return (
+    code === "messaging/registration-token-not-registered" ||
+    code === "messaging/invalid-registration-token"
+  );
+}
+
+// 🔔 매 정각 실행
+exports.sendDailyVerse = onSchedule(
+  {
+    schedule: "every 60 minutes",
+    region: "australia-southeast1",
+    // timeZone은 내부 Intl로 처리하므로 지정 안 함(원하면 "Australia/Sydney"로 지정해도 됨)
+  },
+  async () => {
+    const hhmm = getSydneyHHmm();
+    const ymd = getSydneyYyyyMmDd();
+    console.log(`⏰ Sydney now: ${hhmm} (${ymd})`);
+
+    // preferences 컬렉션 "그룹" 조회 (경로 형태와 무관하게 모든 'preferences' 컬렉션 대상)
+    const snap = await admin
+      .firestore()
+      .collectionGroup("preferences")
+      .where("pushEnabled", "==", true)
+      .where("pushTime", "==", hhmm)
+      .get();
+
+    if (snap.empty) {
+      console.log("ℹ️ No recipients at this hour.");
+      return null;
+    }
+
+    console.log(`📬 Targets: ${snap.size} docs`);
+
+    const logBatch = admin.firestore().batch();
+    const logBaseRef = admin.firestore().collection("push_logs").doc(ymd).collection("logs");
+
+    for (const doc of snap.docs) {
+      const data = doc.data() || {};
+      const uuid = data.uuid || doc.id;
+      const token = data.fcmToken;
+
+      // 토큰이 없으면 스킵 + 로그
+      if (!token || typeof token !== "string" || token.trim() === "") {
+        console.log(`🚫 Skip (no token) uuid=${uuid}`);
+        const logRef = logBaseRef.doc(uuid);
+        logBatch.set(
+          logRef,
+          {
+            uuid,
+            status: "skipped_no_token",
+            timeSent: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+        continue;
+      }
+
+      try {
+        // 단순 안내형 알림 (본문은 앱에서 today_popup.dart가 로딩)
+        const message = {
+          token,
+          notification: {
+            title: "오늘의 말씀",
+            body: "오늘의 말씀이 도착했습니다.",
+          },
+          data: {
+            route: "today",
+          },
+        };
+
+        const res = await admin.messaging().send(message);
+        console.log(`✅ Push OK uuid=${uuid} msgId=${res}`);
+
+        // 성공 로그
+        const logRef = logBaseRef.doc(uuid);
+        logBatch.set(
+          logRef,
+          {
+            uuid,
+            status: "success",
+            timeSent: admin.firestore.FieldValue.serverTimestamp(),
+            fcmToken: token,
+          },
+          { merge: true }
+        );
+      } catch (err) {
+        console.error(`❌ Push FAIL uuid=${uuid}`, err);
+
+        // 실패 로그
+        const logRef = logBaseRef.doc(uuid);
+        logBatch.set(
+          logRef,
+          {
+            uuid,
+            status: "failed",
+            timeSent: admin.firestore.FieldValue.serverTimestamp(),
+            fcmToken: token,
+            error: String(err?.code || err?.message || err),
+          },
+          { merge: true }
+        );
+
+        // 무효 토큰(B) 처리: fcmToken만 제거
+        if (isInvalidTokenError(err)) {
+          console.warn(`🧹 Invalid token → clearing fcmToken uuid=${uuid}`);
+          await doc.ref.update({ fcmToken: admin.firestore.FieldValue.delete() });
+        }
+      }
+    }
+
+    await logBatch.commit();
+    console.log("📝 Log batch committed");
+    return null;
+  }
+);
+
+// 🧹 7일 지난 로그 자동 삭제
+exports.cleanupOldPushLogs = onSchedule(
+  {
+    // 매일 03:30 (UTC로는 다를 수 있지만, 내부 계산 안 쓰고 전체 스캔 방식)
+    schedule: "0 3 * * *",
+    region: "australia-southeast1",
+  },
+  async () => {
+    // 오늘 시드니 yyyyMMdd
+    const todayYmd = getSydneyYyyyMmDd();
+    // 보관 7일 → "삭제 기준"은 오늘-7 (엄밀히는 >7일) 로 처리
+    const today = todayYmd;
+    const y = Number(today.slice(0, 4));
+    const m = Number(today.slice(4, 6));
+    const d = Number(today.slice(6, 8));
+    const base = new Date(Date.UTC(y, m - 1, d)); // 기준
+
+    const cutoff = new Date(base);
+    cutoff.setUTCDate(cutoff.getUTCDate() - 7);
+
+    // yyyyMMdd 계산 헬퍼
+    function toYmdUTC(dt) {
+      const yyyy = dt.getUTCFullYear();
+      const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(dt.getUTCDate()).padStart(2, "0");
+      return `${yyyy}${mm}${dd}`;
+    }
+
+    const cutoffYmd = toYmdUTC(cutoff);
+    console.log(`🧹 Cleanup logs older than ${cutoffYmd}`);
+
+    const logsCol = admin.firestore().collection("push_logs");
+    const all = await logsCol.get();
+    if (all.empty) {
+      console.log("ℹ️ No log docs.");
+      return null;
+    }
+
+    const batch = admin.firestore().batch();
+    let deletions = 0;
+
+    all.forEach((doc) => {
+      const id = doc.id; // yyyyMMdd
+      if (id < cutoffYmd) {
+        console.log(`🗑️ Deleting log doc: ${id}`);
+        batch.delete(doc.ref);
+        deletions++;
+      }
+    });
+
+    if (deletions > 0) {
+      await batch.commit();
+      console.log(`✅ Deleted ${deletions} old log docs`);
+    } else {
+      console.log("ℹ️ No old logs to delete");
+    }
+    return null;
+  }
+);
