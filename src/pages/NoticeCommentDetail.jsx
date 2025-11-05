@@ -42,7 +42,7 @@ function NoticeCommentDetail() {
         const q = query(
           collection(db, "notice_reply"),
           where("content_id", "==", noticeId),
-          orderBy("registeredAt", "desc")
+          orderBy("registeredAt", "Asc")
         );
 
         const snap = await getDocs(q);
