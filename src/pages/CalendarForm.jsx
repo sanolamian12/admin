@@ -1,33 +1,26 @@
 import React, { useState } from "react";
+import { serverTimestamp } from "firebase/firestore";
 
-const CalendarForm = ({ onSubmit, onCancel }) => {
+const CalendarForm = ({ onSubmit, onCancel, userUid, userName }) => {
   const [eventDay, setEventDay] = useState("");
   const [content, setContent] = useState("");
-  const [user, setUser] = useState("");
-  const [isActive, setIsActive] = useState(true);
 
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    // ✅ 시드니(UTC+11) 기준 시간 생성
-    const now = new Date();
-    const sydneyTime = new Date(now.getTime() + 11 * 60 * 60 * 1000);
-
     const formData = {
       eventDay,
       content,
-      user,
-      isActive,
-      registeredAt: sydneyTime, // ✅ 보정된 시간 전달
+      userUid,
+      userName,
+      isActive: true,              // ✅ 신규 등록은 항상 true
+      registeredAt: serverTimestamp(), // ✅ Firestore 서버시간
     };
 
     onSubmit(formData);
 
-    // 제출 후 폼 초기화
     setEventDay("");
     setContent("");
-    setUser("");
-    setIsActive(true);
   };
 
   return (
@@ -48,18 +41,6 @@ const CalendarForm = ({ onSubmit, onCancel }) => {
             required
           />
         </div>
-
-        <div>
-          <label className="block mb-1 font-medium">User (Uploader)</label>
-          <input
-            type="text"
-            className="w-full border rounded px-2 py-1"
-            placeholder="작성자 UID 또는 이름"
-            value={user}
-            onChange={(e) => setUser(e.target.value)}
-            required
-          />
-        </div>
       </div>
 
       <div className="mt-3">
@@ -75,17 +56,9 @@ const CalendarForm = ({ onSubmit, onCancel }) => {
         />
       </div>
 
-      <div className="flex items-center mt-3">
-        <input
-          type="checkbox"
-          id="active"
-          className="mr-2"
-          checked={isActive}
-          onChange={(e) => setIsActive(e.target.checked)}
-        />
-        <label htmlFor="active" className="font-medium">
-          Active (표시 여부)
-        </label>
+      {/* ✅ 작성자 정보는 사용자에게 보여주되 수정 불가 */}
+      <div className="mt-3 text-sm text-gray-600">
+        등록자: <b>{userName}</b>
       </div>
 
       <div className="flex justify-end gap-2 mt-4">
@@ -98,7 +71,7 @@ const CalendarForm = ({ onSubmit, onCancel }) => {
         </button>
         <button
           type="submit"
-          className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+          className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
         >
           Save
         </button>

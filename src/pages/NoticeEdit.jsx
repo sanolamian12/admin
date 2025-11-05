@@ -6,6 +6,7 @@ import {
   doc,
   getDoc,
   updateDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import {
   ref,
@@ -21,7 +22,11 @@ function NoticeEdit() {
   const [notice, setNotice] = useState({
     title: "",
     isActive: true,
+    userName: "",
+    registeredAt: "",
+    updatedAt: "",
   });
+
   const [content, setContent] = useState("");
   const [fileURL, setFileURL] = useState("");
   const [newFile, setNewFile] = useState(null);
@@ -36,17 +41,24 @@ function NoticeEdit() {
         const detailDoc = await getDoc(doc(db, "notice_detail", id));
 
         if (noticeDoc.exists()) {
-          const nData = noticeDoc.data();
+          const n = noticeDoc.data();
           setNotice({
-            title: nData.title || "",
-            isActive: nData.isActive ?? true,
+            title: n.title || "",
+            isActive: n.isActive ?? true,
+            userName: n.userName || "",
+            registeredAt: n.registeredAt
+              ? n.registeredAt.toDate().toLocaleString()
+              : "",
+            updatedAt: n.updatedAt
+              ? n.updatedAt.toDate().toLocaleString()
+              : "",
           });
         }
 
         if (detailDoc.exists()) {
-          const dData = detailDoc.data();
-          setContent(dData.content || "");
-          setFileURL(dData.file_url || "");
+          const d = detailDoc.data();
+          setContent(d.content || "");
+          setFileURL(d.file_url || "");
         }
       } catch (error) {
         console.error("공지 데이터 불러오기 실패:", error);
@@ -59,12 +71,11 @@ function NoticeEdit() {
     fetchNotice();
   }, [id]);
 
-  // 🔹 파일 업로드 (기존 파일 삭제 후 새로 교체)
+  // 🔹 파일 업로드/교체
   const handleFileReplace = async () => {
-    if (!newFile) return fileURL; // 새 파일 없으면 기존 URL 유지
+    if (!newFile) return fileURL;
 
     try {
-      // 1️⃣ 기존 파일 삭제
       if (fileURL) {
         try {
           const decodedPath = decodeURIComponent(
@@ -78,11 +89,9 @@ function NoticeEdit() {
         }
       }
 
-      // 2️⃣ 새 파일 업로드
       const newRef = ref(storage, `notice/${id}/${newFile.name}`);
       await uploadBytes(newRef, newFile);
-      const newURL = await getDownloadURL(newRef);
-      return newURL;
+      return await getDownloadURL(newRef);
     } catch (error) {
       console.error("파일 교체 중 오류:", error);
       alert("첨부파일 교체 중 오류가 발생했습니다.");
@@ -90,7 +99,7 @@ function NoticeEdit() {
     }
   };
 
-  // 🔹 Firestore 업데이트
+  // 🔹 공지 수정 저장
   const handleUpdate = async (e) => {
     e.preventDefault();
     if (!notice.title.trim()) return alert("제목을 입력하세요.");
@@ -99,13 +108,12 @@ function NoticeEdit() {
     try {
       const updatedFileURL = await handleFileReplace();
 
-      // notice 업데이트
       await updateDoc(doc(db, "notice", id), {
         title: notice.title,
         isActive: notice.isActive,
+        updatedAt: serverTimestamp(), // ✅ 수정일 갱신
       });
 
-      // notice_detail 업데이트
       await updateDoc(doc(db, "notice_detail", id), {
         content,
         file_url: updatedFileURL,
@@ -125,17 +133,28 @@ function NoticeEdit() {
     return <p className="text-center p-4">Loading...</p>;
 
   return (
-    <div className="max-w-3xl mx-auto bg-white shadow-md rounded-xl p-8">
-      <h2 className="text-2xl font-bold mb-6 text-blue-700">✏️ 공지 수정</h2>
+    <div className="max-w-3xl mx-auto bg-white shadow-md rounded-xl p-8 relative">
+
+      {/* 🔹 작성자/등록일/수정일 Info Box (오른쪽 상단) */}
+      <div className="absolute right-6 top-6 text-right text-gray-500 text-sm leading-5">
+        <p><strong>작성자:</strong> {notice.userName || "-"}</p>
+        {notice.registeredAt && <p>등록: {notice.registeredAt}</p>}
+        {notice.updatedAt && <p>수정: {notice.updatedAt}</p>}
+      </div>
+
+      <h2 className="text-2xl font-bold mb-10 text-blue-700">✏️ 공지 수정</h2>
 
       <form onSubmit={handleUpdate} className="space-y-6">
+
         {/* 제목 */}
         <div>
           <label className="block font-semibold mb-2">제목</label>
           <input
             type="text"
             value={notice.title}
-            onChange={(e) => setNotice({ ...notice, title: e.target.value })}
+            onChange={(e) =>
+              setNotice({ ...notice, title: e.target.value })
+            }
             className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400"
           />
         </div>
@@ -151,7 +170,7 @@ function NoticeEdit() {
           />
         </div>
 
-        {/* 기존 첨부파일 */}
+        {/* 첨부파일 */}
         <div>
           <label className="block font-semibold mb-2">첨부파일</label>
           {fileURL ? (
@@ -192,7 +211,7 @@ function NoticeEdit() {
           </label>
         </div>
 
-        {/* 버튼 영역 */}
+        {/* 버튼 */}
         <div className="flex justify-end gap-4 pt-4">
           <button
             type="button"

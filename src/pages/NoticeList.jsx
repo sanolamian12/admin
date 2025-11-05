@@ -10,14 +10,13 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 import { db, storage } from "../firebase";
-//import { refFromURL, deleteObject } from "firebase/storage";
 import { ref, deleteObject } from "firebase/storage";
 import { useNavigate } from "react-router-dom";
 
 function NoticeList() {
   const [notices, setNotices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState(null); // ✅ 삭제 중인 ID
+  const [deletingId, setDeletingId] = useState(null);
   const navigate = useNavigate();
 
   // 🔹 공지 목록 불러오기
@@ -30,6 +29,8 @@ function NoticeList() {
 
         for (const docSnap of querySnapshot.docs) {
           const data = docSnap.data();
+
+          // ✅ notice_detail 문서 참조
           const detailRef = doc(db, "notice_detail", data.id);
           const detailSnap = await getDoc(detailRef);
           const fileURL = detailSnap.exists() ? detailSnap.data().file_url || "" : "";
@@ -37,9 +38,11 @@ function NoticeList() {
           noticeList.push({
             id: data.id,
             title: data.title,
-            user: data.user,
+            userName: data.userName || "-", // ✅ userName 반영
+            userUid: data.userUid || "", // (화면에는 사용 X, 수정 시 전달용)
             registeredAt: data.registeredAt?.toDate().toLocaleString() || "",
-            views: data.views,
+            updatedAt: data.updatedAt ? data.updatedAt.toDate().toLocaleString() : "",
+            views: data.views ?? 0,
             isActive: data.isActive,
             file_url: fileURL,
           });
@@ -60,43 +63,38 @@ function NoticeList() {
     const confirmDelete = window.confirm("정말로 이 공지를 삭제하시겠습니까?");
     if (!confirmDelete) return;
 
-    setDeletingId(noticeId); // ✅ 로딩 시작
+    setDeletingId(noticeId);
     try {
-      // 1️⃣ notice_detail 문서에서 file_url 가져오기
       const detailRef = doc(db, "notice_detail", noticeId);
       const detailSnap = await getDoc(detailRef);
       let fileURL = "";
       if (detailSnap.exists()) fileURL = detailSnap.data().file_url || "";
 
-      // 2️⃣ Storage 파일 삭제
+      // ✅ Storage 파일 삭제
       if (fileURL) {
         try {
-            // 🔹 예시 URL:
-            // https://firebasestorage.googleapis.com/v0/b/yourapp.appspot.com/o/notice_files%2Fnotice_1730...%2Fmanual.pdf?alt=media
-            const decodedPath = decodeURIComponent(
-              fileURL.split("/o/")[1].split("?")[0]
-            ); // => "notice_files/notice_1730.../manual.pdf"
-
-            const fileRef = ref(storage, decodedPath);
-            await deleteObject(fileRef);
-            console.log("📁 첨부파일 삭제 완료:", decodedPath);
-          } catch (fileErr) {
-            console.warn("⚠️ 첨부파일 삭제 실패:", fileErr);
+          const decodedPath = decodeURIComponent(
+            fileURL.split("/o/")[1].split("?")[0]
+          );
+          const fileRef = ref(storage, decodedPath);
+          await deleteObject(fileRef);
+          console.log("📁 첨부파일 삭제 완료:", decodedPath);
+        } catch (fileErr) {
+          console.warn("⚠️ 첨부파일 삭제 실패:", fileErr);
         }
       }
 
-      // 3️⃣ Firestore 문서 삭제
+      // ✅ Firestore 삭제
       await deleteDoc(doc(db, "notice", noticeId));
       await deleteDoc(detailRef);
 
-      // 4️⃣ 로컬 상태 갱신
       setNotices((prev) => prev.filter((n) => n.id !== noticeId));
       alert("공지 및 첨부파일이 모두 삭제되었습니다!");
     } catch (error) {
       console.error("🔥 공지 삭제 실패:", error);
       alert("삭제 중 오류가 발생했습니다.");
     } finally {
-      setDeletingId(null); // ✅ 로딩 종료
+      setDeletingId(null);
     }
   };
 
@@ -120,6 +118,7 @@ function NoticeList() {
             <th className="py-2 px-4 border-b">제목</th>
             <th className="py-2 px-4 border-b">작성자</th>
             <th className="py-2 px-4 border-b">등록일</th>
+            <th className="py-2 px-4 border-b">수정일</th>
             <th className="py-2 px-4 border-b">조회수</th>
             <th className="py-2 px-4 border-b">활성여부</th>
             <th className="py-2 px-4 border-b">첨부파일</th>
@@ -131,8 +130,11 @@ function NoticeList() {
           {notices.map((item) => (
             <tr key={item.id} className="hover:bg-gray-50 text-center">
               <td className="py-2 px-4 border-b">{item.title}</td>
-              <td className="py-2 px-4 border-b">{item.user}</td>
+              <td className="py-2 px-4 border-b">{item.userName}</td>
               <td className="py-2 px-4 border-b">{item.registeredAt}</td>
+              <td className="py-2 px-4 border-b">
+                {item.updatedAt ? item.updatedAt : "-"}
+              </td>
               <td className="py-2 px-4 border-b">{item.views}</td>
               <td className="py-2 px-4 border-b">
                 {item.isActive ? "✅ 활성" : "❌ 비활성"}

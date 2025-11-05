@@ -13,13 +13,12 @@ function NoticeForm() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // 🔹 파일 업로드 (Storage)
+  // 🔹 첨부 파일 업로드
   const handleFileUpload = async (noticeId) => {
     if (!file) return "";
 
     try {
       setUploading(true);
-      // ✅ Flutter와 동일한 경로 구조
       const storageRef = ref(storage, `notice/${noticeId}/${file.name}`);
       await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(storageRef);
@@ -33,7 +32,7 @@ function NoticeForm() {
     }
   };
 
-  // 🔹 폼 제출
+  // 🔹 공지 등록
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!title.trim() || !content.trim()) {
@@ -43,7 +42,7 @@ function NoticeForm() {
 
     setLoading(true);
     try {
-      // ✅ Firestore에서 자동 ID 생성 (Flutter와 동일)
+      // ✅ Firestore 자동 ID 생성
       const noticeRef = doc(collection(db, "notice"));
       const noticeId = noticeRef.id;
 
@@ -54,13 +53,14 @@ function NoticeForm() {
       await setDoc(noticeRef, {
         id: noticeId,
         title,
-        user: "admin", // 관리자 계정 이름
+        userUid: "adminUid",   // << ✅ 관리자 UID (원하면 환경변수화 가능)
+        userName: "관리자",     // << ✅ 화면 표시용
         registeredAt: serverTimestamp(),
         isActive: true,
         views: 0,
       });
 
-      // ✅ notice_detail 문서 생성 (id 동일)
+      // ✅ notice_detail 문서 생성
       await setDoc(doc(db, "notice_detail", noticeId), {
         id: noticeId,
         content,

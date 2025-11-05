@@ -23,6 +23,11 @@ import PhotoList from "./pages/PhotoList.jsx";
 import PhotoForm from "./pages/PhotoForm.jsx";
 import PhotoDetail from "./pages/PhotoDetail.jsx";
 
+// 댓글 관리 페이지 컴포넌트 import
+import NoticeCommentList from "./pages/NoticeCommentList";
+import NoticeCommentDetail from "./pages/NoticeCommentDetail";
+
+
 function App() {
   return (
     <BrowserRouter>
@@ -85,6 +90,12 @@ function App() {
               <Route path="photo" element={<PhotoList />} />
               <Route path="photo/new" element={<PhotoForm />} />
               <Route path="photo/:id" element={<PhotoDetail />} />
+
+              {/* 댓글이 달린 게시글 목록 */}
+              <Route path="/admin/comments" element={<NoticeCommentList />} />
+              {/* 특정 게시글의 댓글 리스트 */}
+              <Route path="/admin/comments/:noticeId" element={<NoticeCommentDetail />} />
+
             </Route>
 
             {/* 알 수 없는 경로 → /admin */}

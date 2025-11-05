@@ -50,7 +50,7 @@ const AdminPage = () => {
               </div>
             </div>
 
-            {/* ✅ 사진 앨범 관리 (새로 추가된 섹션) */}
+            {/* ✅ 사진 앨범 관리 */}
             <div className="p-8 border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition bg-white">
               <h2 className="text-xl font-bold text-gray-800 mb-3">📸 사진 앨범 관리</h2>
               <p className="text-gray-600 text-sm leading-relaxed mb-4">
@@ -101,6 +101,17 @@ const AdminPage = () => {
                 앱 사용자 수 및 방문 기록을 확인합니다.
               </p>
             </div>
+
+            {/* ✅ 댓글 관리 (신규 추가) */}
+            <Link
+              to="/admin/comments"
+              className="p-8 border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition bg-white block"
+            >
+              <h2 className="text-xl font-bold text-gray-800 mb-3">💬 댓글 관리</h2>
+              <p className="text-gray-600 text-sm leading-relaxed">
+                공지에 달린 사용자 댓글을 조회 및 삭제합니다.
+              </p>
+            </Link>
           </div>
         </>
       ) : (

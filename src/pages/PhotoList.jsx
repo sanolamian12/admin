@@ -8,6 +8,7 @@ import {
   doc,
   orderBy,
   query,
+  where,
 } from "firebase/firestore";
 import { db, storage } from "../firebase";
 import { ref, listAll, deleteObject } from "firebase/storage";
@@ -21,7 +22,10 @@ const PhotoList = () => {
   useEffect(() => {
     const fetchPhotos = async () => {
       try {
-        const q = query(collection(db, "photo"), orderBy("registeredAt", "desc"));
+        const q = query(
+          collection(db, "photo"),
+          orderBy("registeredAt", "desc")
+        );
         const snap = await getDocs(q);
         const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setPhotos(data);
@@ -34,27 +38,27 @@ const PhotoList = () => {
     fetchPhotos();
   }, []);
 
-  // 🔹 Storage 내 모든 하위 파일 재귀 삭제
+  // 🔹 Storage 폴더 내 모든 파일 & 하위 폴더 삭제
   const deleteAllInFolder = async (folderRef) => {
     const list = await listAll(folderRef);
     const promises = [];
 
-    // 현재 폴더 내 파일 삭제
     for (const item of list.items) {
-      promises.push(deleteObject(item));
+      promises.push(deleteObject(item)); // 파일 삭제
     }
 
-    // 하위 폴더 내 파일 재귀 삭제
     for (const prefix of list.prefixes) {
-      promises.push(deleteAllInFolder(prefix));
+      promises.push(deleteAllInFolder(prefix)); // 하위 폴더 재귀 삭제
     }
 
     await Promise.all(promises);
   };
 
-  // 🔹 Firestore 문서 + Storage 이미지 완전 삭제
+  // 🧨 Hard Delete: Firestore + Sub + Views + Storage 전체 삭제
   const handleDelete = async (photoId) => {
-    const ok = window.confirm("이 앨범을 완전히 삭제하시겠습니까? (복원 불가)");
+    const ok = window.confirm(
+      "⚠️ 이 앨범을 완전히 삭제하시겠습니까?\n삭제 시 복구가 불가능하며, 모든 관련 데이터가 삭제됩니다."
+    );
     if (!ok) return;
 
     try {
@@ -65,16 +69,28 @@ const PhotoList = () => {
       );
       await Promise.all(deleteDetailPromises);
 
-      // 2️⃣ Firestore: 상위 photo 문서 삭제
+      // 2️⃣ Firestore: photo_views 삭제 (해당 photoId)
+      const viewsQuery = query(
+        collection(db, "photo_views"),
+        where("content_id", "==", photoId)
+      );
+      const viewsSnap = await getDocs(viewsQuery);
+      const deleteViewsPromises = viewsSnap.docs.map((d) =>
+        deleteDoc(doc(db, "photo_views", d.id))
+      );
+      await Promise.all(deleteViewsPromises);
+
+      // 3️⃣ Firestore: 상위 photo 문서 삭제
       await deleteDoc(doc(db, "photo", photoId));
 
-      // 3️⃣ Storage: 해당 앨범의 모든 이미지 및 썸네일 삭제
+      // 4️⃣ Storage: 해당 앨범의 모든 파일 삭제
       const albumRef = ref(storage, `photo/${photoId}`);
       await deleteAllInFolder(albumRef);
 
-      // 4️⃣ UI 갱신
+      // 5️⃣ UI 갱신
       setPhotos((prev) => prev.filter((p) => p.id !== photoId));
-      alert("앨범이 완전히 삭제되었습니다.");
+
+      alert("✅ 앨범 및 모든 관련 데이터가 완전히 삭제되었습니다.");
     } catch (err) {
       console.error("⚠️ Error deleting photo album:", err);
       alert("삭제 중 오류가 발생했습니다.");
@@ -130,7 +146,7 @@ const PhotoList = () => {
                   {p.caption || "제목 없음"}
                 </p>
                 <p className="text-sm text-gray-500 mb-2">
-                  등록자: {p.user || "Unknown"}
+                  등록자: {p.userName || "Unknown"}
                 </p>
 
                 <div className="flex justify-between items-center mt-2">
@@ -143,7 +159,7 @@ const PhotoList = () => {
 
                   <button
                     onClick={() => handleDelete(p.id)}
-                    className="text-red-500 hover:text-red-700 text-sm"
+                    className="text-red-600 hover:text-red-800 font-semibold text-sm"
                   >
                     삭제
                   </button>

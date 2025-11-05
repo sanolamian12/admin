@@ -5,9 +5,7 @@ import { db, storage } from "../firebase";
 import {
   collection,
   addDoc,
-  doc,
-  updateDoc,
-  Timestamp, // ✅ 추가
+  Timestamp,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -37,27 +35,30 @@ const PhotoForm = () => {
 
       // ✅ 시드니 시간 기준 Timestamp 생성
       const now = new Date();
-      const sydneyTime = new Date(now.getTime() + 11 * 60 * 60 * 1000);
+      const sydneyTime = new Date(now.toLocaleString("en-US", { timeZone: "Australia/Sydney" }));
 
       // 1️⃣ photo 문서 생성
       const photoRef = await addDoc(collection(db, "photo"), {
         caption,
-        user: "admin", // 추후 auth.currentUser.email 로 교체 가능
-        registeredAt: Timestamp.fromDate(sydneyTime), // ✅ 변경됨
+        userUid: "admin",
+        userName: "관리자",
+        registeredAt: Timestamp.fromDate(sydneyTime),
         isActive: true,
-        thumb_url: "",
+        thumb_url: "", // ✅ Cloud Function이 생성 후 업데이트
         views: 0,
       });
 
       const photoId = photoRef.id;
-
-      // 2️⃣ 상세 이미지 업로드 (첫 번째 이미지 = 대표)
       const detailCol = collection(db, "photo", photoId, "photo_detail");
 
+      // 2️⃣ 상세 이미지 업로드 (첫 번째 이미지 = 대표, but thumb_url은 Cloud Functions에서)
       for (let i = 0; i < imageFiles.length; i++) {
         const file = imageFiles[i];
+
+        // ✅ 원본 확장자 유지 (예: .jpg / .png / .jpeg / .heic)
+        const ext = file.name.split(".").pop();
         const index = String(i + 1).padStart(3, "0"); // 001, 002...
-        const imgPath = `photo/${photoId}/images/${index}.jpg`;
+        const imgPath = `photo/${photoId}/images/${index}.${ext}`;
 
         const imgURL = await uploadFile(imgPath, file);
 
@@ -65,12 +66,13 @@ const PhotoForm = () => {
           content_id: photoId,
           picture_id: index,
           image_url: imgURL,
-          thumb_url: "", // Cloud Function이 thumb_001.jpg 등 자동 추가
+          thumb_url: "", // Cloud Function이 채울 예정
         });
       }
 
-      alert("새 앨범이 등록되었습니다!");
+      alert("✅ 새 앨범이 등록되었습니다!");
       navigate("/admin/photo");
+
     } catch (err) {
       console.error("🔥 업로드 오류:", err);
       alert("업로드 중 오류가 발생했습니다.");

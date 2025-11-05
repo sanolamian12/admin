@@ -21,7 +21,7 @@ const PhotoDetail = () => {
   const [details, setDetails] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🔹 Firestore에서 데이터 로드
+  // 🔹 Firestore에서 데이터 로드 (photo + photo_detail)
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -45,8 +45,10 @@ const PhotoDetail = () => {
   }, [id]);
 
   // 🔹 특정 상세 이미지 삭제 (Firestore + Storage)
-  const handleDeleteImage = async (docId, imageUrl) => {
-    const ok = window.confirm("이 이미지를 삭제하시겠습니까?");
+  const handleDeleteImage = async (docId, imageUrl, pictureId) => {
+    const ok = window.confirm(
+      "⚠️ 이 이미지를 완전히 삭제하시겠습니까?\n삭제 시 복구가 불가능합니다."
+    );
     if (!ok) return;
 
     try {
@@ -54,13 +56,14 @@ const PhotoDetail = () => {
       await deleteDoc(doc(db, "photo", id, "photo_detail", docId));
 
       // 2️⃣ Storage 원본 이미지 삭제
-      const fileRef = ref(storage, imageUrl);
-      await deleteObject(fileRef).catch(() =>
+      const originalPath = `photo/${id}/images/${pictureId}.jpg`;
+      const originalRef = ref(storage, originalPath);
+      await deleteObject(originalRef).catch(() =>
         console.log("⚠️ 원본 이미지 없음, 스킵")
       );
 
-      // 3️⃣ 썸네일 삭제 (경로 변환: /images/ → /thumbs/)
-      const thumbPath = imageUrl.replace("/images/", "/thumbs/").replace(/([^/]+)$/, "thumb_$1");
+      // 3️⃣ 썸네일 삭제
+      const thumbPath = `photo/${id}/thumbs/thumb_${pictureId}.jpg`;
       const thumbRef = ref(storage, thumbPath);
       await deleteObject(thumbRef).catch(() =>
         console.log("⚠️ 썸네일 없음, 스킵")
@@ -68,7 +71,7 @@ const PhotoDetail = () => {
 
       // 4️⃣ UI 업데이트
       setDetails((prev) => prev.filter((d) => d.id !== docId));
-      alert("이미지가 삭제되었습니다.");
+      alert("🗑️ 이미지가 완전히 삭제되었습니다.");
     } catch (err) {
       console.error("⚠️ Error deleting image:", err);
       alert("삭제 중 오류가 발생했습니다.");
@@ -108,7 +111,7 @@ const PhotoDetail = () => {
         </button>
       </div>
 
-      {/* 대표 썸네일 */}
+      {/* 대표 썸네일 + 정보 */}
       <div className="mb-8">
         {photo.thumb_url ? (
           <img
@@ -122,7 +125,11 @@ const PhotoDetail = () => {
           </div>
         )}
         <p className="mt-4 text-gray-600">
-          등록자: <span className="font-semibold">{photo.user}</span> |{" "}
+          등록자:{" "}
+          <span className="font-semibold">
+            {photo.userName || photo.user || "Unknown"}
+          </span>{" "}
+          |{" "}
           <span className="text-sm">
             상태:{" "}
             <span
@@ -138,6 +145,7 @@ const PhotoDetail = () => {
 
       {/* 상세 이미지 리스트 */}
       <h2 className="text-xl font-semibold text-gray-700 mb-4">상세 이미지</h2>
+
       {details && details.length > 0 ? (
         <div className="grid grid-cols-3 gap-6">
           {details.map((d) => (
@@ -150,6 +158,7 @@ const PhotoDetail = () => {
                 alt={d.picture_id}
                 className="w-full h-48 object-cover rounded-t-xl"
               />
+
               <div className="p-3 text-sm text-gray-600 flex justify-between items-center">
                 <span>사진 #{d.picture_id}</span>
                 <div className="flex gap-3 items-center">
@@ -162,7 +171,9 @@ const PhotoDetail = () => {
                     원본 보기
                   </a>
                   <button
-                    onClick={() => handleDeleteImage(d.id, d.image_url)}
+                    onClick={() =>
+                      handleDeleteImage(d.id, d.image_url, d.picture_id)
+                    }
                     className="text-red-500 hover:text-red-700 text-xs"
                   >
                     삭제
