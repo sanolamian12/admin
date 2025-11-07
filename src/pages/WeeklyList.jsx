@@ -1,3 +1,6 @@
+// ✅ WeeklyList.jsx
+// 변경점: 추후 다국어 대응을 위한 title_en 주석만 추가. 기능 동일.
+
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
@@ -8,7 +11,7 @@ import {
   deleteDoc,
   getDoc,
 } from "firebase/firestore";
-import { getStorage, ref, deleteObject } from "firebase/storage"; // ✅ 추가
+import { getStorage, ref, deleteObject } from "firebase/storage"; // ✅ 파일삭제
 
 const WeeklyList = () => {
   const [weeklyList, setWeeklyList] = useState([]);
@@ -20,7 +23,7 @@ const WeeklyList = () => {
       const querySnapshot = await getDocs(collection(db, "weekly"));
       const list = querySnapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data(),
+        ...doc.data(), // ⚠️ title_en 존재하지만 목록 화면에서는 title만 사용
       }));
       setWeeklyList(list);
     } catch (error) {
@@ -50,7 +53,6 @@ const WeeklyList = () => {
         // 2️⃣ Storage 파일 삭제
         if (fileUrl) {
           try {
-            // URL에서 실제 Storage 경로 추출
             const decodedUrl = decodeURIComponent(fileUrl);
             const basePath = decodedUrl.match(/\/o\/(.*?)\?alt=/)?.[1];
             if (basePath) {
@@ -98,13 +100,17 @@ const WeeklyList = () => {
                 className="cursor-pointer hover:bg-gray-50 transition"
                 onClick={() => navigate(`/admin/weekly/${item.id}`)}
               >
+                {/* 🇰🇷 한글 제목만 표시 (요청대로) */}
                 <td className="py-2 px-4 border-b">{item.title}</td>
+
                 <td className="py-2 px-4 border-b">
                   {item.registeredAt?.toDate
                     ? item.registeredAt.toDate().toLocaleDateString()
                     : "-"}
                 </td>
+
                 <td className="py-2 px-4 border-b">{item.views || 0}</td>
+
                 <td className="py-2 px-4 border-b">
                   <button
                     onClick={(e) => {

@@ -1,4 +1,5 @@
-// src/pages/WeeklyEdit.jsx
+// ✅ WeeklyEdit.jsx (다국어 A 스타일 + Validation + 파일 유지/교체 로직 유지)
+
 import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
 import {
@@ -7,25 +8,36 @@ import {
   updateDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
+import {
+  getStorage,
+  ref,
+  uploadBytesResumable,
+  getDownloadURL,
+  deleteObject,
+} from "firebase/storage";
 import { useNavigate, useParams } from "react-router-dom";
 
 const WeeklyEdit = () => {
-  const { id } = useParams(); // 수정할 게시물 id
+  const { id } = useParams();
   const navigate = useNavigate();
+
   const [loading, setLoading] = useState(true);
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const [formData, setFormData] = useState({
     title: "",
+    title_en: "",
     serVerse: "",
+    serVerse_en: "",
     serPreacher: "",
+    serPreacher_en: "",
     serSummary: "",
+    serSummary_en: "",
     fileUrl: "",
-    file: null,
+    file: null, // 새 파일 선택 시 사용
   });
 
-  // ✅ 1. 기존 데이터 로드
+  // ✅ 기존 데이터 로드
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -40,11 +52,16 @@ const WeeklyEdit = () => {
         if (weeklySnap.exists() && detailSnap.exists()) {
           const weeklyData = weeklySnap.data();
           const detailData = detailSnap.data();
+
           setFormData({
             title: weeklyData.title || "",
+            title_en: weeklyData.title_en || "",
             serVerse: detailData["ser-verse"] || "",
+            serVerse_en: detailData["ser-verse_en"] || "",
             serPreacher: detailData["ser-preacher"] || "",
+            serPreacher_en: detailData["ser-preacher_en"] || "",
             serSummary: detailData["ser-summary"] || "",
+            serSummary_en: detailData["ser-summary_en"] || "",
             fileUrl: detailData.file_url || "",
             file: null,
           });
@@ -60,39 +77,57 @@ const WeeklyEdit = () => {
     };
 
     fetchData();
-  }, [id]);
+  }, [id, navigate]);
 
-  // ✅ 2. 입력 핸들러
+  // ✅ 입력 핸들러
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // ✅ 3. 새 파일 선택
+  // ✅ 새 파일 선택
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (file) setFormData((prev) => ({ ...prev, file }));
   };
 
-  // ✅ 4. 파일 선택 취소
+  // ✅ 파일 선택 취소
   const handleCancelFile = () => {
     setFormData((prev) => ({ ...prev, file: null }));
     setUploadProgress(0);
   };
 
-  // ✅ 5. 수정 제출
+  // ✅ 수정 제출
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // ✅ 필수 Validation
+    const requiredFields = [
+      "title",
+      "title_en",
+      "serVerse",
+      "serVerse_en",
+      "serPreacher",
+      "serPreacher_en",
+      "serSummary",
+      "serSummary_en",
+    ];
+
+    for (const field of requiredFields) {
+      if (!formData[field].trim()) {
+        alert("모든 항목의 한글/영문 입력이 필요합니다.");
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
       let newFileUrl = formData.fileUrl;
+      const storage = getStorage();
 
-      // 🔹 기존 파일 교체 (새 파일 선택된 경우)
+      // 🔹 파일 교체 로직: 새 파일 업로드 시 기존 파일 삭제 후 교체
       if (formData.file) {
-        const storage = getStorage();
-
-        // 기존 파일 삭제
         if (formData.fileUrl) {
           try {
             const decodedUrl = decodeURIComponent(formData.fileUrl);
@@ -107,7 +142,6 @@ const WeeklyEdit = () => {
           }
         }
 
-        // 새 파일 업로드
         const newRef = ref(storage, `weekly_files/${Date.now()}_${formData.file.name}`);
         const uploadTask = uploadBytesResumable(newRef, formData.file);
 
@@ -115,8 +149,7 @@ const WeeklyEdit = () => {
           uploadTask.on(
             "state_changed",
             (snapshot) => {
-              const progress =
-                (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
               setUploadProgress(progress.toFixed(0));
             },
             (error) => reject(error),
@@ -128,19 +161,23 @@ const WeeklyEdit = () => {
         });
       }
 
-      // 🔹 Firestore 업데이트
+      // ✅ Firestore 업데이트
       const weeklyRef = doc(db, "weekly", id);
       const detailRef = doc(db, "weekly_detail", id);
 
       await updateDoc(weeklyRef, {
         title: formData.title,
+        title_en: formData.title_en,
         registeredAt: serverTimestamp(),
       });
 
       await updateDoc(detailRef, {
         "ser-verse": formData.serVerse,
+        "ser-verse_en": formData.serVerse_en,
         "ser-preacher": formData.serPreacher,
+        "ser-preacher_en": formData.serPreacher_en,
         "ser-summary": formData.serSummary,
+        "ser-summary_en": formData.serSummary_en,
         file_url: newFileUrl,
       });
 
@@ -162,9 +199,11 @@ const WeeklyEdit = () => {
     <div className="max-w-3xl mx-auto p-6 bg-white rounded-2xl shadow-sm">
       <h2 className="text-2xl font-bold mb-4">✏️ 예배 게시물 수정</h2>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit} className="space-y-6">
+
+        {/* 제목 */}
         <div>
-          <label className="block text-gray-700 mb-1">제목</label>
+          <label className="block font-semibold text-gray-700 mb-1">제목 (KR)</label>
           <input
             type="text"
             name="title"
@@ -172,10 +211,20 @@ const WeeklyEdit = () => {
             onChange={handleChange}
             className="w-full border px-3 py-2 rounded"
           />
+
+          <label className="block font-semibold text-gray-700 mt-3 mb-1">제목 (EN)</label>
+          <input
+            type="text"
+            name="title_en"
+            value={formData.title_en}
+            onChange={handleChange}
+            className="w-full border px-3 py-2 rounded"
+          />
         </div>
 
+        {/* 본문 말씀 */}
         <div>
-          <label className="block text-gray-700 mb-1">본문 말씀</label>
+          <label className="block font-semibold text-gray-700 mb-1">본문 말씀 (KR)</label>
           <input
             type="text"
             name="serVerse"
@@ -183,10 +232,20 @@ const WeeklyEdit = () => {
             onChange={handleChange}
             className="w-full border px-3 py-2 rounded"
           />
+
+          <label className="block font-semibold text-gray-700 mt-3 mb-1">본문 말씀 (EN)</label>
+          <input
+            type="text"
+            name="serVerse_en"
+            value={formData.serVerse_en}
+            onChange={handleChange}
+            className="w-full border px-3 py-2 rounded"
+          />
         </div>
 
+        {/* 설교자 */}
         <div>
-          <label className="block text-gray-700 mb-1">설교자</label>
+          <label className="block font-semibold text-gray-700 mb-1">설교자 (KR)</label>
           <input
             type="text"
             name="serPreacher"
@@ -194,21 +253,40 @@ const WeeklyEdit = () => {
             onChange={handleChange}
             className="w-full border px-3 py-2 rounded"
           />
+
+          <label className="block font-semibold text-gray-700 mt-3 mb-1">설교자 (EN)</label>
+          <input
+            type="text"
+            name="serPreacher_en"
+            value={formData.serPreacher_en}
+            onChange={handleChange}
+            className="w-full border px-3 py-2 rounded"
+          />
         </div>
 
+        {/* 요약 */}
         <div>
-          <label className="block text-gray-700 mb-1">요약</label>
+          <label className="block font-semibold text-gray-700 mb-1">설교 요약 (KR)</label>
           <textarea
             name="serSummary"
             value={formData.serSummary}
             onChange={handleChange}
             className="w-full border px-3 py-2 rounded min-h-[100px]"
           />
+
+          <label className="block font-semibold text-gray-700 mt-3 mb-1">설교 요약 (EN)</label>
+          <textarea
+            name="serSummary_en"
+            value={formData.serSummary_en}
+            onChange={handleChange}
+            className="w-full border px-3 py-2 rounded min-h-[100px]"
+          />
         </div>
 
-        {/* 파일 첨부 */}
+        {/* 파일 */}
         <div>
-          <label className="block text-gray-700 mb-1">첨부파일</label>
+          <label className="block font-semibold text-gray-700 mb-1">첨부파일</label>
+
           {formData.fileUrl && !formData.file && (
             <p className="text-sm text-gray-700 mb-2">
               현재 파일:{" "}
@@ -222,6 +300,7 @@ const WeeklyEdit = () => {
               </a>
             </p>
           )}
+
           {formData.file && (
             <p className="text-sm text-gray-700 mb-2">
               새 파일 선택: <strong>{formData.file.name}</strong>
@@ -230,6 +309,7 @@ const WeeklyEdit = () => {
 
           <div className="flex items-center gap-3">
             <input type="file" accept="image/*,.pdf,.mp3,.mp4" onChange={handleFileSelect} />
+
             {formData.file && (
               <button
                 type="button"
@@ -248,6 +328,7 @@ const WeeklyEdit = () => {
           )}
         </div>
 
+        {/* 수정 버튼 */}
         <button
           type="submit"
           disabled={loading}

@@ -198,11 +198,10 @@ function getSydneyYyyyMmDd() {
   })
     .formatToParts(now)
     .reduce((acc, p) => ((acc[p.type] = p.value), acc), {});
-  // month/day가 "11"/"03" 형태라 가정
   return `${parts.year}${parts.month}${parts.day}`;
 }
 
-// 무효 토큰 코드 판별
+// 무효 토큰 판별
 function isInvalidTokenError(err) {
   const code = err?.code || err?.errorInfo?.code || "";
   return (
@@ -216,17 +215,16 @@ exports.sendDailyVerse = onSchedule(
   {
     schedule: "every 60 minutes",
     region: "australia-southeast1",
-    // timeZone은 내부 Intl로 처리하므로 지정 안 함(원하면 "Australia/Sydney"로 지정해도 됨)
   },
   async () => {
     const hhmm = getSydneyHHmm();
     const ymd = getSydneyYyyyMmDd();
     console.log(`⏰ Sydney now: ${hhmm} (${ymd})`);
 
-    // preferences 컬렉션 "그룹" 조회 (경로 형태와 무관하게 모든 'preferences' 컬렉션 대상)
+    // ✅ 변경된 핵심 부분: /settings 기준으로 조회
     const snap = await admin
       .firestore()
-      .collectionGroup("preferences")
+      .collection("settings")
       .where("pushEnabled", "==", true)
       .where("pushTime", "==", hhmm)
       .get();
@@ -236,22 +234,23 @@ exports.sendDailyVerse = onSchedule(
       return null;
     }
 
-    console.log(`📬 Targets: ${snap.size} docs`);
+    console.log(`📬 Targets: ${snap.size} devices scheduled at ${hhmm}`);
 
     const logBatch = admin.firestore().batch();
-    const logBaseRef = admin.firestore().collection("push_logs").doc(ymd).collection("logs");
+    const logBaseRef = admin.firestore()
+      .collection("push_logs")
+      .doc(ymd)
+      .collection("logs");
 
     for (const doc of snap.docs) {
       const data = doc.data() || {};
       const uuid = data.uuid || doc.id;
       const token = data.fcmToken;
 
-      // 토큰이 없으면 스킵 + 로그
       if (!token || typeof token !== "string" || token.trim() === "") {
         console.log(`🚫 Skip (no token) uuid=${uuid}`);
-        const logRef = logBaseRef.doc(uuid);
         logBatch.set(
-          logRef,
+          logBaseRef.doc(uuid),
           {
             uuid,
             status: "skipped_no_token",
@@ -263,7 +262,6 @@ exports.sendDailyVerse = onSchedule(
       }
 
       try {
-        // 단순 안내형 알림 (본문은 앱에서 today_popup.dart가 로딩)
         const message = {
           token,
           notification: {
@@ -278,10 +276,8 @@ exports.sendDailyVerse = onSchedule(
         const res = await admin.messaging().send(message);
         console.log(`✅ Push OK uuid=${uuid} msgId=${res}`);
 
-        // 성공 로그
-        const logRef = logBaseRef.doc(uuid);
         logBatch.set(
-          logRef,
+          logBaseRef.doc(uuid),
           {
             uuid,
             status: "success",
@@ -293,10 +289,8 @@ exports.sendDailyVerse = onSchedule(
       } catch (err) {
         console.error(`❌ Push FAIL uuid=${uuid}`, err);
 
-        // 실패 로그
-        const logRef = logBaseRef.doc(uuid);
         logBatch.set(
-          logRef,
+          logBaseRef.doc(uuid),
           {
             uuid,
             status: "failed",
@@ -307,7 +301,7 @@ exports.sendDailyVerse = onSchedule(
           { merge: true }
         );
 
-        // 무효 토큰(B) 처리: fcmToken만 제거
+        // ✅ invalid token 삭제
         if (isInvalidTokenError(err)) {
           console.warn(`🧹 Invalid token → clearing fcmToken uuid=${uuid}`);
           await doc.ref.update({ fcmToken: admin.firestore.FieldValue.delete() });
@@ -324,30 +318,25 @@ exports.sendDailyVerse = onSchedule(
 // 🧹 7일 지난 로그 자동 삭제
 exports.cleanupOldPushLogs = onSchedule(
   {
-    // 매일 03:30 (UTC로는 다를 수 있지만, 내부 계산 안 쓰고 전체 스캔 방식)
     schedule: "0 3 * * *",
     region: "australia-southeast1",
   },
   async () => {
-    // 오늘 시드니 yyyyMMdd
     const todayYmd = getSydneyYyyyMmDd();
-    // 보관 7일 → "삭제 기준"은 오늘-7 (엄밀히는 >7일) 로 처리
-    const today = todayYmd;
-    const y = Number(today.slice(0, 4));
-    const m = Number(today.slice(4, 6));
-    const d = Number(today.slice(6, 8));
-    const base = new Date(Date.UTC(y, m - 1, d)); // 기준
+    const y = Number(todayYmd.slice(0, 4));
+    const m = Number(todayYmd.slice(4, 6));
+    const d = Number(todayYmd.slice(6, 8));
 
+    const base = new Date(Date.UTC(y, m - 1, d));
     const cutoff = new Date(base);
     cutoff.setUTCDate(cutoff.getUTCDate() - 7);
 
-    // yyyyMMdd 계산 헬퍼
-    function toYmdUTC(dt) {
+    const toYmdUTC = (dt) => {
       const yyyy = dt.getUTCFullYear();
       const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
       const dd = String(dt.getUTCDate()).padStart(2, "0");
       return `${yyyy}${mm}${dd}`;
-    }
+    };
 
     const cutoffYmd = toYmdUTC(cutoff);
     console.log(`🧹 Cleanup logs older than ${cutoffYmd}`);
@@ -363,7 +352,7 @@ exports.cleanupOldPushLogs = onSchedule(
     let deletions = 0;
 
     all.forEach((doc) => {
-      const id = doc.id; // yyyyMMdd
+      const id = doc.id;
       if (id < cutoffYmd) {
         console.log(`🗑️ Deleting log doc: ${id}`);
         batch.delete(doc.ref);

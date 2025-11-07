@@ -1,7 +1,8 @@
-// src/pages/WeeklyForm.jsx
+// ✅ WeeklyForm.jsx (다국어 A 스타일 + Validation 적용)
+
 import React, { useState } from "react";
 import { db } from "../firebase";
-import { collection, doc, setDoc, Timestamp } from "firebase/firestore"; // ✅ Timestamp 추가
+import { collection, doc, setDoc, Timestamp } from "firebase/firestore";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { useNavigate } from "react-router-dom";
 
@@ -10,11 +11,14 @@ const WeeklyForm = () => {
 
   const [formData, setFormData] = useState({
     title: "",
+    title_en: "",
     serVerse: "",
+    serVerse_en: "",
     serPreacher: "",
+    serPreacher_en: "",
     serSummary: "",
+    serSummary_en: "",
     file: null,
-    fileUrl: "",
   });
 
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -34,24 +38,40 @@ const WeeklyForm = () => {
   };
 
   const handleCancelFile = () => {
-    setFormData((prev) => ({ ...prev, file: null, fileUrl: "" }));
+    setFormData((prev) => ({ ...prev, file: null }));
     setUploadProgress(0);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.title.trim()) {
-      alert("제목을 입력해주세요.");
-      return;
+
+    // ✅ Validation: 모든 한글/영문 필드 필수
+    const requiredFields = [
+      "title",
+      "title_en",
+      "serVerse",
+      "serVerse_en",
+      "serPreacher",
+      "serPreacher_en",
+      "serSummary",
+      "serSummary_en",
+    ];
+
+    for (const field of requiredFields) {
+      if (!formData[field].trim()) {
+        alert("모든 항목의 한글/영문 입력이 필요합니다.");
+        return;
+      }
     }
 
     setLoading(true);
+
     try {
       const weeklyRef = doc(collection(db, "weekly"));
       const id = weeklyRef.id;
       let downloadURL = "";
 
-      // ✅ (1) 파일 업로드 (선택된 경우에만)
+      // ✅ 파일 업로드 (선택사항)
       if (formData.file) {
         const storage = getStorage();
         const fileRef = ref(storage, `weekly_files/${Date.now()}_${formData.file.name}`);
@@ -61,14 +81,10 @@ const WeeklyForm = () => {
           uploadTask.on(
             "state_changed",
             (snapshot) => {
-              const progress =
-                (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
               setUploadProgress(progress.toFixed(0));
             },
-            (error) => {
-              console.error("업로드 실패:", error);
-              reject(error);
-            },
+            (error) => reject(error),
             async () => {
               downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
               resolve();
@@ -77,25 +93,29 @@ const WeeklyForm = () => {
         });
       }
 
-      // ✅ (2) 시드니 시간 기준 Timestamp 생성
+      // ✅ 시드니 시간 Timestamp
       const now = new Date();
       const sydneyTime = new Date(now.getTime() + 11 * 60 * 60 * 1000);
 
-      // ✅ (3) Firestore 등록
+      // ✅ weekly 저장
       await setDoc(weeklyRef, {
         id,
         title: formData.title,
+        title_en: formData.title_en,
         views: 0,
         isActive: true,
-        registeredAt: Timestamp.fromDate(sydneyTime), // ✅ Firestore Timestamp 저장 (UTC+11)
+        registeredAt: Timestamp.fromDate(sydneyTime),
       });
 
-      // ✅ (4) 세부 내용 테이블
+      // ✅ weekly_detail 저장
       await setDoc(doc(db, "weekly_detail", id), {
         id,
         "ser-verse": formData.serVerse,
+        "ser-verse_en": formData.serVerse_en,
         "ser-preacher": formData.serPreacher,
+        "ser-preacher_en": formData.serPreacher_en,
         "ser-summary": formData.serSummary,
+        "ser-summary_en": formData.serSummary_en,
         file_url: downloadURL,
       });
 
@@ -113,36 +133,57 @@ const WeeklyForm = () => {
     <div className="max-w-3xl mx-auto p-6 bg-white rounded-2xl shadow-sm">
       <h2 className="text-2xl font-bold mb-4">⛪ 주간 예배 등록</h2>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit} className="space-y-6">
+
         {/* 제목 */}
         <div>
-          <label className="block text-gray-700 mb-1">제목</label>
+          <label className="block font-semibold text-gray-700 mb-1">제목 (KR)</label>
           <input
             type="text"
             name="title"
             value={formData.title}
             onChange={handleChange}
             className="w-full border px-3 py-2 rounded"
-            placeholder="예: 10월 26일 주일예배"
+            placeholder="예: 우리는 거룩한 제사장"
+          />
+
+          <label className="block font-semibold text-gray-700 mt-3 mb-1">제목 (EN)</label>
+          <input
+            type="text"
+            name="title_en"
+            value={formData.title_en}
+            onChange={handleChange}
+            className="w-full border px-3 py-2 rounded"
+            placeholder="예: We Are a Holy Priesthood"
           />
         </div>
 
         {/* 본문 말씀 */}
         <div>
-          <label className="block text-gray-700 mb-1">본문 말씀</label>
+          <label className="block font-semibold text-gray-700 mb-1">본문 말씀 (KR)</label>
           <input
             type="text"
             name="serVerse"
             value={formData.serVerse}
             onChange={handleChange}
             className="w-full border px-3 py-2 rounded"
-            placeholder="예: 요한복음 3:16"
+            placeholder="예: 출애굽기 19장 5-6절"
+          />
+
+          <label className="block font-semibold text-gray-700 mt-3 mb-1">본문 말씀 (EN)</label>
+          <input
+            type="text"
+            name="serVerse_en"
+            value={formData.serVerse_en}
+            onChange={handleChange}
+            className="w-full border px-3 py-2 rounded"
+            placeholder="예: Exodus 19:5-6"
           />
         </div>
 
         {/* 설교자 */}
         <div>
-          <label className="block text-gray-700 mb-1">설교자</label>
+          <label className="block font-semibold text-gray-700 mb-1">설교자 (KR)</label>
           <input
             type="text"
             name="serPreacher"
@@ -151,11 +192,21 @@ const WeeklyForm = () => {
             className="w-full border px-3 py-2 rounded"
             placeholder="예: 홍길동 목사"
           />
+
+          <label className="block font-semibold text-gray-700 mt-3 mb-1">설교자 (EN)</label>
+          <input
+            type="text"
+            name="serPreacher_en"
+            value={formData.serPreacher_en}
+            onChange={handleChange}
+            className="w-full border px-3 py-2 rounded"
+            placeholder="예: Rev. Hong"
+          />
         </div>
 
         {/* 요약 */}
         <div>
-          <label className="block text-gray-700 mb-1">요약</label>
+          <label className="block font-semibold text-gray-700 mb-1">설교 요약 (KR)</label>
           <textarea
             name="serSummary"
             value={formData.serSummary}
@@ -163,15 +214,23 @@ const WeeklyForm = () => {
             className="w-full border px-3 py-2 rounded min-h-[100px]"
             placeholder="설교 요약 내용을 입력하세요."
           />
+
+          <label className="block font-semibold text-gray-700 mt-3 mb-1">설교 요약 (EN)</label>
+          <textarea
+            name="serSummary_en"
+            value={formData.serSummary_en}
+            onChange={handleChange}
+            className="w-full border px-3 py-2 rounded min-h-[100px]"
+            placeholder="Enter English summary here."
+          />
         </div>
 
         {/* 파일 업로드 */}
         <div>
-          <label className="block text-gray-700 mb-1">파일 첨부</label>
+          <label className="block font-semibold text-gray-700 mb-1">파일 첨부</label>
+
           {!formData.file ? (
-            <p className="text-gray-500 text-sm mb-2">
-              선택된 첨부파일이 없습니다.
-            </p>
+            <p className="text-gray-500 text-sm mb-2">선택된 첨부파일이 없습니다.</p>
           ) : (
             <p className="text-gray-700 text-sm mb-2">
               선택된 파일: <strong>{formData.file.name}</strong>
@@ -179,11 +238,7 @@ const WeeklyForm = () => {
           )}
 
           <div className="flex items-center gap-3">
-            <input
-              type="file"
-              accept="image/*,.pdf,.mp3,.mp4"
-              onChange={handleFileSelect}
-            />
+            <input type="file" accept="image/*,.pdf,.mp3,.mp4" onChange={handleFileSelect} />
             {formData.file && (
               <button
                 type="button"
@@ -196,9 +251,7 @@ const WeeklyForm = () => {
           </div>
 
           {uploadProgress > 0 && uploadProgress < 100 && (
-            <p className="text-sm text-gray-500 mt-1">
-              업로드 중... {uploadProgress}%
-            </p>
+            <p className="text-sm text-gray-500 mt-1">업로드 중... {uploadProgress}%</p>
           )}
         </div>
 
