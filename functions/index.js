@@ -63,8 +63,10 @@ exports.generatePhotoThumbnail = onObjectFinalized(async (event) => {
   // 🔥 1) PUBLIC URL 생성 (Signed URL 제거)
   // Firebase 공식 URL: https://firebasestorage.googleapis.com/v0/b/<bucket>/o/<path>?alt=media
   // ============================================================
+  const publicBucketName  = "stlc-church-app.firebasestorage.app";
+
   const publicThumbURL =
-    `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/` +
+    `https://firebasestorage.googleapis.com/v0/b/${publicBucketName }/o/` +
     encodeURIComponent(thumbFilePath) +
     `?alt=media`;
 
