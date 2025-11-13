@@ -18,9 +18,8 @@ admin.initializeApp({
 });
 const storage = new Storage();
 
-
 // ============================================================
-// 🔹 1. Photo 업로드 시 썸네일 자동 생성
+// 🔹 Photo 업로드 시 썸네일 생성 + PUBLIC URL 저장
 // ============================================================
 exports.generatePhotoThumbnail = onObjectFinalized(async (event) => {
   const object = event.data;
@@ -30,17 +29,13 @@ exports.generatePhotoThumbnail = onObjectFinalized(async (event) => {
   const fileName = path.basename(filePath);
   const dirName = path.dirname(filePath);
 
-  if (!contentType || !contentType.startsWith("image/")) {
-    console.log("🚫 Not an image, skipping...");
-    return null;
-  }
-
-  if (fileName.startsWith("thumb_")) {
-    console.log("🚫 Already a thumbnail, skipping...");
-    return null;
-  }
+  // 이미지가 아닐 경우 무시
+  if (!contentType || !contentType.startsWith("image/")) return null;
+  if (fileName.startsWith("thumb_")) return null;
 
   const bucket = storage.bucket(bucketName);
+
+  // TEMP 저장
   const tempLocalFile = path.join(os.tmpdir(), fileName);
   const tempLocalDir = path.join(os.tmpdir(), "thumbs");
   const thumbFileName = `thumb_${fileName}`;
@@ -51,61 +46,62 @@ exports.generatePhotoThumbnail = onObjectFinalized(async (event) => {
   await fs.ensureDir(tempLocalDir);
   await bucket.file(filePath).download({ destination: tempLocalFile });
 
-  const thumbBuffer = await sharp(tempLocalFile)
-    .resize({ width: 300 })
-    .toBuffer();
+  // 썸네일 생성
+  const thumbBuffer = await sharp(tempLocalFile).resize({ width: 300 }).toBuffer();
   const tempLocalThumb = path.join(tempLocalDir, thumbFileName);
   await fs.writeFile(tempLocalThumb, thumbBuffer);
 
+  // 썸네일 업로드
   await bucket.upload(tempLocalThumb, {
     destination: thumbFilePath,
     metadata: { contentType },
   });
 
-  console.log("✅ Thumbnail created:", thumbFilePath);
+  console.log("🔥 Thumbnail created:", thumbFilePath);
 
-  const thumbFile = bucket.file(thumbFilePath);
-  const [thumbURL] = await thumbFile.getSignedUrl({
-    action: "read",
-    expires: "03-01-2500",
-  });
+  // ============================================================
+  // 🔥 1) PUBLIC URL 생성 (Signed URL 제거)
+  // Firebase 공식 URL: https://firebasestorage.googleapis.com/v0/b/<bucket>/o/<path>?alt=media
+  // ============================================================
+  const publicThumbURL =
+    `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/` +
+    encodeURIComponent(thumbFilePath) +
+    `?alt=media`;
 
-  console.log("📸 Thumbnail URL:", thumbURL);
+  console.log("✅ Public thumb URL:", publicThumbURL);
 
+  // ============================================================
+  // 🔥 2) Firestore 업데이트 (thumb_url 그대로 유지)
+  // ============================================================
   const segments = filePath.split("/");
   const photoId = segments[1];
   const folderName = segments[2];
 
-  // ========================================================
-  // ✅ 1️⃣ images 폴더: photo_detail.thumb_url 업데이트
-  // ========================================================
+  // images → thumbnails → photo_detail 업데이트
   if (folderName === "images") {
     const pictureId = path.parse(fileName).name;
-    console.log(`🔹 Updating photo_detail for ${photoId}, picture ${pictureId}`);
 
+    // photo_detail/{index}
     const detailRef = admin
       .firestore()
       .collection("photo")
       .doc(photoId)
       .collection("photo_detail")
-      .doc(pictureId); // ✅ 개별 문서 직접 업데이트
+      .doc(pictureId);
 
-    await detailRef.set({ thumb_url: thumbURL }, { merge: true });
+    await detailRef.set({ thumb_url: publicThumbURL }, { merge: true });
 
-    // ✅ 001.jpg 의 썸네일이라면 대표 thumb_url 로 photo 문서 갱신
+    // 대표 사진(001) → photo document 업데이트
     if (pictureId === "001") {
-      console.log(`🌟 Setting main thumb_url for photo/${photoId}`);
       await admin.firestore().collection("photo").doc(photoId).update({
-        thumb_url: thumbURL,
+        thumb_url: publicThumbURL,
       });
     }
   }
 
   await fs.remove(tempLocalDir);
-  console.log("🧹 Cleanup complete.");
   return null;
 });
-
 
 // ============================================================
 // 🔹 2. Weekly / Photo / Notice 조회수 자동 반영
