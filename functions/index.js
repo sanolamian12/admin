@@ -2,6 +2,8 @@
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2/options");
+const { onSchedule } = require("firebase-functions/v2/scheduler"); // 스케줄러 추가
+const { onRequest } = require("firebase-functions/v2/https"); // HTTP 요청 처리 추가
 const admin = require("firebase-admin");
 const { Storage } = require("@google-cloud/storage");
 const sharp = require("sharp");
@@ -169,7 +171,6 @@ exports.syncNoticeViews = onDocumentCreated(
 // ===============================
 // 4) Daily Push (STLC)
 // ===============================
-const { onSchedule } = require("firebase-functions/v2/scheduler");
 
 // 시드니 HH:mm 포맷 (ex: "09:00")
 function getSydneyHHmm() {
@@ -208,7 +209,106 @@ function isInvalidTokenError(err) {
   );
 }
 
-// 🔔 매 정각 실행
+// 🧠 [NEW] 핵심 로직을 분리한 공통 푸시 실행 함수
+// targets: Firestore DocumentSnapshot 배열
+async function executePushToTargets(targets, isTest = false) {
+  const ymd = getSydneyYyyyMmDd();
+  const logBatch = admin.firestore().batch();
+  const logBaseRef = admin.firestore()
+    .collection("push_logs")
+    .doc(ymd)
+    .collection("logs");
+
+  let successCount = 0;
+  let failureCount = 0;
+
+  if (targets.length === 0) {
+      return { successCount: 0, failureCount: 0 };
+  }
+
+  console.log(`📬 Targets: ${targets.length} devices found. Test mode: ${isTest}`);
+
+  for (const doc of targets) {
+    const data = doc.data() || {};
+    const uuid = data.uuid || doc.id;
+    const token = data.fcmToken;
+    const messageTitle = isTest ? "테스트 푸시 알림" : "오늘의 말씀";
+    const messageBody = isTest ? "일일 푸시 로직 테스트가 성공했습니다." : "오늘의 말씀이 도착했습니다.";
+
+    if (!token || typeof token !== "string" || token.trim() === "") {
+      console.log(`🚫 Skip (no token) uuid=${uuid}`);
+      logBatch.set(
+        logBaseRef.doc(uuid),
+        {
+          uuid,
+          status: "skipped_no_token",
+          timeSent: admin.firestore.FieldValue.serverTimestamp(),
+          fcmToken: token,
+        },
+        { merge: true }
+      );
+      continue;
+    }
+
+    try {
+      const message = {
+        token,
+        notification: {
+          title: messageTitle,
+          body: messageBody,
+        },
+        data: {
+          route: "today",
+          isTest: isTest ? "true" : "false", // 테스트 여부 data 필드에 포함
+        },
+      };
+
+      const res = await admin.messaging().send(message);
+      console.log(`✅ Push OK uuid=${uuid} msgId=${res}`);
+      successCount++;
+
+      logBatch.set(
+        logBaseRef.doc(uuid),
+        {
+          uuid,
+          status: "success",
+          timeSent: admin.firestore.FieldValue.serverTimestamp(),
+          fcmToken: token,
+          testMode: isTest,
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.error(`❌ Push FAIL uuid=${uuid}`, err);
+      failureCount++;
+
+      logBatch.set(
+        logBaseRef.doc(uuid),
+        {
+          uuid,
+          status: "failed",
+          timeSent: admin.firestore.FieldValue.serverTimestamp(),
+          fcmToken: token,
+          error: String(err?.code || err?.message || err),
+          testMode: isTest,
+        },
+        { merge: true }
+      );
+
+      // ✅ invalid token 삭제
+      if (isInvalidTokenError(err)) {
+        console.warn(`🧹 Invalid token → clearing fcmToken uuid=${uuid}`);
+        await doc.ref.update({ fcmToken: admin.firestore.FieldValue.delete() });
+      }
+    }
+  }
+
+  await logBatch.commit();
+  console.log("📝 Log batch committed");
+  return { successCount, failureCount };
+}
+
+// 🔔 기존의 스케줄 실행 함수: sendDailyVerse
 exports.sendDailyVerse = onSchedule(
   {
     schedule: "0 * * * *", // 매 정각
@@ -217,10 +317,9 @@ exports.sendDailyVerse = onSchedule(
   },
   async () => {
     const hhmm = getSydneyHHmm();
-    const ymd = getSydneyYyyyMmDd();
-    console.log(`⏰ Sydney now: ${hhmm} (${ymd})`);
+    console.log(`⏰ Sydney now: ${hhmm}`);
 
-    // ✅ 변경된 핵심 부분: /settings 기준으로 조회
+    // 스케줄 실행은 pushEnabled == true 이고 pushTime이 현재 시각과 일치하는 모든 사용자를 조회
     const snap = await admin
       .firestore()
       .collection("settings")
@@ -233,86 +332,161 @@ exports.sendDailyVerse = onSchedule(
       return null;
     }
 
-    console.log(`📬 Targets: ${snap.size} devices scheduled at ${hhmm}`);
-
-    const logBatch = admin.firestore().batch();
-    const logBaseRef = admin.firestore()
-      .collection("push_logs")
-      .doc(ymd)
-      .collection("logs");
-
-    for (const doc of snap.docs) {
-      const data = doc.data() || {};
-      const uuid = data.uuid || doc.id;
-      const token = data.fcmToken;
-
-      if (!token || typeof token !== "string" || token.trim() === "") {
-        console.log(`🚫 Skip (no token) uuid=${uuid}`);
-        logBatch.set(
-          logBaseRef.doc(uuid),
-          {
-            uuid,
-            status: "skipped_no_token",
-            timeSent: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-        continue;
-      }
-
-      try {
-        const message = {
-          token,
-          notification: {
-            title: "오늘의 말씀",
-            body: "오늘의 말씀이 도착했습니다.",
-          },
-          data: {
-            route: "today",
-          },
-        };
-
-        const res = await admin.messaging().send(message);
-        console.log(`✅ Push OK uuid=${uuid} msgId=${res}`);
-
-        logBatch.set(
-          logBaseRef.doc(uuid),
-          {
-            uuid,
-            status: "success",
-            timeSent: admin.firestore.FieldValue.serverTimestamp(),
-            fcmToken: token,
-          },
-          { merge: true }
-        );
-      } catch (err) {
-        console.error(`❌ Push FAIL uuid=${uuid}`, err);
-
-        logBatch.set(
-          logBaseRef.doc(uuid),
-          {
-            uuid,
-            status: "failed",
-            timeSent: admin.firestore.FieldValue.serverTimestamp(),
-            fcmToken: token,
-            error: String(err?.code || err?.message || err),
-          },
-          { merge: true }
-        );
-
-        // ✅ invalid token 삭제
-        if (isInvalidTokenError(err)) {
-          console.warn(`🧹 Invalid token → clearing fcmToken uuid=${uuid}`);
-          await doc.ref.update({ fcmToken: admin.firestore.FieldValue.delete() });
-        }
-      }
-    }
-
-    await logBatch.commit();
-    console.log("📝 Log batch committed");
+    // 공통 함수 호출 (isTest: false)
+    await executePushToTargets(snap.docs, false);
     return null;
   }
 );
+
+// 🚀 [NEW] 테스트 버튼을 위한 HTTP 트리거 함수
+exports.triggerDailyPushTest = onRequest(
+  {
+    region: "australia-southeast1", // 기존 함수와 동일한 리전 사용
+  },
+  async (req, res) => {
+    // 1. 요청 유효성 검사
+    if (req.method !== "POST" || !req.body.uuid) {
+      return res.status(400).send({ status: "fail", message: "Invalid request or missing UUID." });
+    }
+
+    const { uuid } = req.body; // Flutter 앱에서 전송한 UUID
+
+    try {
+        // 2. 특정 UUID만 조회 (테스트 대상)
+        const snap = await admin
+          .firestore()
+          .collection("settings")
+          .doc(uuid)
+          .get();
+
+        if (!snap.exists || !snap.data().pushEnabled) {
+            return res.status(404).send({ status: "fail", message: "UUID not found or push not enabled." });
+        }
+
+        // 3. 공통 함수 호출 (isTest: true) - 단일 디바이스에 대해서만 실행
+        const targets = [snap];
+        const result = await executePushToTargets(targets, true);
+
+        if (result.successCount > 0) {
+            return res.status(200).send({ status: "success", message: "Test push sent to the device." });
+        } else if (result.failureCount > 0) {
+            return res.status(500).send({ status: "fail", message: "Push sending failed. Check logs for details." });
+        } else {
+            return res.status(404).send({ status: "fail", message: "No valid token found for this device." });
+        }
+
+    } catch (error) {
+        console.error("❌ HTTP Test Push FAIL:", error);
+        return res.status(500).send({ status: "error", message: error.message });
+    }
+  }
+);
+
+// 🔔 매 정각 실행
+//exports.sendDailyVerse = onSchedule(
+//  {
+//    schedule: "0 * * * *", // 매 정각
+//    timeZone: "Australia/Sydney",
+//    region: "australia-southeast1",
+//  },
+//  async () => {
+//    const hhmm = getSydneyHHmm();
+//    const ymd = getSydneyYyyyMmDd();
+//    console.log(`⏰ Sydney now: ${hhmm} (${ymd})`);
+//
+//    // ✅ 변경된 핵심 부분: /settings 기준으로 조회
+//    const snap = await admin
+//      .firestore()
+//      .collection("settings")
+//      .where("pushEnabled", "==", true)
+//      .where("pushTime", "==", hhmm)
+//      .get();
+//
+//    if (snap.empty) {
+//      console.log("ℹ️ No recipients at this hour.");
+//      return null;
+//    }
+//
+//    console.log(`📬 Targets: ${snap.size} devices scheduled at ${hhmm}`);
+//
+//    const logBatch = admin.firestore().batch();
+//    const logBaseRef = admin.firestore()
+//      .collection("push_logs")
+//      .doc(ymd)
+//      .collection("logs");
+//
+//    for (const doc of snap.docs) {
+//      const data = doc.data() || {};
+//      const uuid = data.uuid || doc.id;
+//      const token = data.fcmToken;
+//
+//      if (!token || typeof token !== "string" || token.trim() === "") {
+//        console.log(`🚫 Skip (no token) uuid=${uuid}`);
+//        logBatch.set(
+//          logBaseRef.doc(uuid),
+//          {
+//            uuid,
+//            status: "skipped_no_token",
+//            timeSent: admin.firestore.FieldValue.serverTimestamp(),
+//          },
+//          { merge: true }
+//        );
+//        continue;
+//      }
+//
+//      try {
+//        const message = {
+//          token,
+//          notification: {
+//            title: "오늘의 말씀",
+//            body: "오늘의 말씀이 도착했습니다.",
+//          },
+//          data: {
+//            route: "today",
+//          },
+//        };
+//
+//        const res = await admin.messaging().send(message);
+//        console.log(`✅ Push OK uuid=${uuid} msgId=${res}`);
+//
+//        logBatch.set(
+//          logBaseRef.doc(uuid),
+//          {
+//            uuid,
+//            status: "success",
+//            timeSent: admin.firestore.FieldValue.serverTimestamp(),
+//            fcmToken: token,
+//          },
+//          { merge: true }
+//        );
+//      } catch (err) {
+//        console.error(`❌ Push FAIL uuid=${uuid}`, err);
+//
+//        logBatch.set(
+//          logBaseRef.doc(uuid),
+//          {
+//            uuid,
+//            status: "failed",
+//            timeSent: admin.firestore.FieldValue.serverTimestamp(),
+//            fcmToken: token,
+//            error: String(err?.code || err?.message || err),
+//          },
+//          { merge: true }
+//        );
+//
+//        // ✅ invalid token 삭제
+//        if (isInvalidTokenError(err)) {
+//          console.warn(`🧹 Invalid token → clearing fcmToken uuid=${uuid}`);
+//          await doc.ref.update({ fcmToken: admin.firestore.FieldValue.delete() });
+//        }
+//      }
+//    }
+//
+//    await logBatch.commit();
+//    console.log("📝 Log batch committed");
+//    return null;
+//  }
+//);
 
 // 🧹 7일 지난 로그 자동 삭제
 exports.cleanupOldPushLogs = onSchedule(
