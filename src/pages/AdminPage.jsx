@@ -112,6 +112,18 @@ const AdminPage = () => {
                 공지에 달린 사용자 댓글을 조회 및 삭제합니다.
               </p>
             </Link>
+
+            {/* 🔑✅ 계정 생성 요청 관리 (최종 추가) */}
+            <Link
+              to="/admin/requests"
+              className="p-8 border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition bg-white block"
+            >
+              <h2 className="text-xl font-bold text-gray-800 mb-3">🔑 계정 요청 관리</h2>
+              <p className="text-gray-600 text-sm leading-relaxed">
+                신규 사용자 계정 생성 요청을 확인하고 승인 처리합니다.
+              </p>
+            </Link>
+
           </div>
         </>
       ) : (

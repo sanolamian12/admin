@@ -27,6 +27,9 @@ import PhotoDetail from "./pages/PhotoDetail.jsx";
 import NoticeCommentList from "./pages/NoticeCommentList";
 import NoticeCommentDetail from "./pages/NoticeCommentDetail";
 
+// ✅ 추가: 계정 요청 관리 페이지
+import RequestList from "./pages/RequestList.jsx"; // RequestPage 대신 일관성을 위해 List로 명명
+import RequestDetail from "./pages/RequestDetail.jsx";
 
 function App() {
   return (
@@ -96,6 +99,9 @@ function App() {
               {/* 특정 게시글의 댓글 리스트 */}
               <Route path="/admin/comments/:noticeId" element={<NoticeCommentDetail />} />
 
+              {/* ✅ 계정 생성 요청 관리 (새로 추가) */}
+              <Route path="requests" element={<RequestList />} />
+              <Route path="requests/:requestId" element={<RequestDetail />} />
             </Route>
 
             {/* 알 수 없는 경로 → /admin */}
