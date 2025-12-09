@@ -1,4 +1,4 @@
-// src/pages/AdminPage.jsx
+// src/pages/AdminPage.jsx (수정)
 import React from "react";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "../firebase";
@@ -102,18 +102,30 @@ const AdminPage = () => {
               </p>
             </div>
 
-            {/* ✅ 댓글 관리 (신규 추가) */}
+            {/* ✅ 댓글 관리 (공지) */}
             <Link
               to="/admin/comments"
               className="p-8 border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition bg-white block"
             >
-              <h2 className="text-xl font-bold text-gray-800 mb-3">💬 댓글 관리</h2>
+              <h2 className="text-xl font-bold text-gray-800 mb-3">💬 공지 댓글 관리</h2>
               <p className="text-gray-600 text-sm leading-relaxed">
                 공지에 달린 사용자 댓글을 조회 및 삭제합니다.
               </p>
             </Link>
 
-            {/* 🔑✅ 계정 생성 요청 관리 (최종 추가) */}
+            {/* ⭐️⭐️⭐️ 신규 추가: 사진 댓글 관리 ⭐️⭐️⭐️ */}
+            <Link
+              to="/admin/photo-comments"
+              className="p-8 border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition bg-white block"
+            >
+              <h2 className="text-xl font-bold text-gray-800 mb-3">🖼️ 사진 댓글 관리</h2>
+              <p className="text-gray-600 text-sm leading-relaxed">
+                사진 앨범에 달린 사용자 댓글을 조회 및 삭제합니다.
+              </p>
+            </Link>
+
+
+            {/* 🔑✅ 계정 생성 요청 관리 */}
             <Link
               to="/admin/requests"
               className="p-8 border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition bg-white block"

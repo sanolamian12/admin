@@ -11,6 +11,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  documentId,
 } from "firebase/firestore";
 
 function NoticeCommentDetail() {
@@ -42,7 +43,7 @@ function NoticeCommentDetail() {
         const q = query(
           collection(db, "notice_reply"),
           where("content_id", "==", noticeId),
-          orderBy("registeredAt", "Asc")
+          orderBy("registeredAt", "asc")
         );
 
         const snap = await getDocs(q);

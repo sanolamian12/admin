@@ -1,7 +1,5 @@
 // ✅ WeeklyList.jsx
-// 변경점: 추후 다국어 대응을 위한 title_en 주석만 추가. 기능 동일.
-
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
 import {
@@ -11,21 +9,34 @@ import {
   deleteDoc,
   getDoc,
 } from "firebase/firestore";
-import { getStorage, ref, deleteObject } from "firebase/storage"; // ✅ 파일삭제
+import { getStorage, ref, deleteObject } from "firebase/storage";
 
 const WeeklyList = () => {
   const [weeklyList, setWeeklyList] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1); // 👈 현재 페이지
+  const itemsPerPage = 50; // 👈 페이지당 항목 수: 50개 고정
+
   const navigate = useNavigate();
 
-  // Firestore에서 데이터 가져오기
+  // Firestore에서 데이터 가져오기 및 정렬
   const fetchWeeklyList = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, "weekly"));
-      const list = querySnapshot.docs.map((doc) => ({
+      let list = querySnapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data(), // ⚠️ title_en 존재하지만 목록 화면에서는 title만 사용
+        ...doc.data(),
       }));
+
+      // 1. ✅ 최신 날짜(registeredAt) 기준 내림차순 정렬
+      list.sort((a, b) => {
+        // Timestamp 객체를 가정하고 getTime()으로 비교 (밀리초)
+        const dateA = a.registeredAt?.toDate ? a.registeredAt.toDate().getTime() : 0;
+        const dateB = b.registeredAt?.toDate ? b.registeredAt.toDate().getTime() : 0;
+        return dateB - dateA; // 내림차순 (최신 날짜가 위로)
+      });
+
       setWeeklyList(list);
+      setCurrentPage(1); // 새로운 목록을 가져올 때 페이지를 1로 초기화
     } catch (error) {
       console.error("Error fetching weekly data:", error);
     }
@@ -35,7 +46,7 @@ const WeeklyList = () => {
     fetchWeeklyList();
   }, []);
 
-  // ✅ 첨부파일 + 문서 동시 삭제 기능
+  // ✅ 첨부파일 + 문서 동시 삭제 기능 (기존 로직 유지)
   const handleDelete = async (id) => {
     if (!window.confirm("정말 이 게시물을 삭제하시겠습니까?")) return;
 
@@ -80,6 +91,94 @@ const WeeklyList = () => {
     }
   };
 
+  // 2. ✅ 페이지네이션 계산 및 현재 페이지 데이터 추출
+  const totalPages = Math.ceil(weeklyList.length / itemsPerPage);
+
+  const currentItems = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return weeklyList.slice(startIndex, endIndex);
+  }, [weeklyList, currentPage, itemsPerPage]); // 의존성 배열에 weeklyList 추가
+
+  // 페이지 변경 핸들러
+  const handlePageChange = (page) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  // 페이지네이션 버튼 렌더링
+  const renderPagination = () => {
+    const pageNumbers = [];
+    const maxPagesToShow = 10; // 화면에 표시할 최대 페이지 번호 수
+
+    let startPage = Math.max(1, currentPage - Math.floor(maxPagesToShow / 2));
+    let endPage = Math.min(totalPages, startPage + maxPagesToShow - 1);
+
+    if (endPage - startPage + 1 < maxPagesToShow) {
+      startPage = Math.max(1, endPage - maxPagesToShow + 1);
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+      pageNumbers.push(i);
+    }
+
+    return (
+      <div className="flex justify-center mt-4 space-x-2">
+        {/* 이전 버튼 */}
+        <button
+          onClick={() => handlePageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          className="px-3 py-1 border rounded disabled:opacity-50"
+        >
+          이전
+        </button>
+
+        {/* 첫 페이지로 이동 (필요하다면) */}
+        {startPage > 1 && (
+            <button
+                onClick={() => handlePageChange(1)}
+                className="px-3 py-1 border rounded hover:bg-gray-100"
+            >
+                1...
+            </button>
+        )}
+
+        {/* 페이지 번호들 */}
+        {pageNumbers.map((number) => (
+          <button
+            key={number}
+            onClick={() => handlePageChange(number)}
+            className={`px-3 py-1 border rounded ${
+              number === currentPage ? "bg-blue-500 text-white" : "hover:bg-gray-100"
+            }`}
+          >
+            {number}
+          </button>
+        ))}
+
+        {/* 마지막 페이지로 이동 (필요하다면) */}
+        {endPage < totalPages && (
+            <button
+                onClick={() => handlePageChange(totalPages)}
+                className="px-3 py-1 border rounded hover:bg-gray-100"
+            >
+                ...{totalPages}
+            </button>
+        )}
+
+        {/* 다음 버튼 */}
+        <button
+          onClick={() => handlePageChange(currentPage + 1)}
+          disabled={currentPage === totalPages || totalPages === 0}
+          className="px-3 py-1 border rounded disabled:opacity-50"
+        >
+          다음
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className="p-6">
       <h2 className="text-xl font-bold mb-4">주간 예배 게시물 목록</h2>
@@ -93,14 +192,14 @@ const WeeklyList = () => {
           </tr>
         </thead>
         <tbody>
-          {weeklyList.length > 0 ? (
-            weeklyList.map((item) => (
+          {/* ✅ currentItems로 변경하여 현재 페이지 항목만 표시 */}
+          {currentItems.length > 0 ? (
+            currentItems.map((item) => (
               <tr
                 key={item.id}
                 className="cursor-pointer hover:bg-gray-50 transition"
                 onClick={() => navigate(`/admin/weekly/${item.id}`)}
               >
-                {/* 🇰🇷 한글 제목만 표시 (요청대로) */}
                 <td className="py-2 px-4 border-b">{item.title}</td>
 
                 <td className="py-2 px-4 border-b">
@@ -126,13 +225,18 @@ const WeeklyList = () => {
             ))
           ) : (
             <tr>
+              {/* 전체 리스트가 비어있을 때만 표시 */}
               <td colSpan="4" className="py-4 text-center">
-                게시물이 없습니다.
+                {weeklyList.length === 0 ? "게시물이 없습니다." : "현재 페이지에 표시할 게시물이 없습니다."}
               </td>
             </tr>
           )}
         </tbody>
       </table>
+
+      {/* 2. ✅ 페이지네이션 컨트롤 추가 */}
+      {totalPages > 1 && renderPagination()}
+
     </div>
   );
 };

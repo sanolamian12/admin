@@ -26,6 +26,9 @@ import PhotoDetail from "./pages/PhotoDetail.jsx";
 // 댓글 관리 페이지 컴포넌트 import
 import NoticeCommentList from "./pages/NoticeCommentList";
 import NoticeCommentDetail from "./pages/NoticeCommentDetail";
+// ⭐️⭐️⭐️ 신규 추가: 사진 댓글 페이지 컴포넌트 import ⭐️⭐️⭐️
+import PhotoCommentList from "./pages/PhotoCommentList";
+import PhotoCommentDetail from "./pages/PhotoCommentDetail";
 
 // ✅ 추가: 계정 요청 관리 페이지
 import RequestList from "./pages/RequestList.jsx"; // RequestPage 대신 일관성을 위해 List로 명명
@@ -94,12 +97,16 @@ function App() {
               <Route path="photo/new" element={<PhotoForm />} />
               <Route path="photo/:id" element={<PhotoDetail />} />
 
-              {/* 댓글이 달린 게시글 목록 */}
-              <Route path="/admin/comments" element={<NoticeCommentList />} />
-              {/* 특정 게시글의 댓글 리스트 */}
-              <Route path="/admin/comments/:noticeId" element={<NoticeCommentDetail />} />
+              {/* 공지 댓글 관리 (게시글 목록) */}
+              <Route path="comments" element={<NoticeCommentList />} />
+              {/* 공지 댓글 관리 (특정 게시글의 댓글 리스트) */}
+              <Route path="comments/:noticeId" element={<NoticeCommentDetail />} />
 
-              {/* ✅ 계정 생성 요청 관리 (새로 추가) */}
+              {/* ⭐️⭐️⭐️ 신규 추가: 사진 댓글 관리 라우트 ⭐️⭐️⭐️ */}
+              <Route path="photo-comments" element={<PhotoCommentList />} />
+              <Route path="photo-comments/:photoId" element={<PhotoCommentDetail />} />
+
+              {/* ✅ 계정 생성 요청 관리 */}
               <Route path="requests" element={<RequestList />} />
               <Route path="requests/:requestId" element={<RequestDetail />} />
             </Route>
