@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"C:\\\\Users\\\\user\\\\my_app1\")",
+      "Read(//c/Users/user/my_app1/**)"
+    ],
+    "additionalDirectories": [
+      "C:\\users\\user\\my_app1"
+    ]
+  }
+}
